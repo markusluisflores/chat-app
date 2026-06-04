@@ -58,6 +58,7 @@ Next.js 14+ App Router with `@supabase/ssr` for cookie-based auth. Server Compon
 
 ```
 chat-app/
+├── middleware.ts                ← Supabase session refresh (root level, required by Next.js)
 ├── app/
 │   ├── (auth)/
 │   │   ├── login/page.tsx
@@ -66,8 +67,7 @@ chat-app/
 │   │   ├── layout.tsx           ← Server Component, auth guard
 │   │   ├── chat/page.tsx        ← empty state
 │   │   └── chat/[userId]/page.tsx
-│   ├── layout.tsx               ← root layout, SessionProvider
-│   └── middleware.ts            ← Supabase session refresh
+│   └── layout.tsx               ← root layout, SessionProvider
 ├── components/
 │   ├── nav/                     NavSidebar, UserCard, SearchBar
 │   ├── conversations/           ConversationList, ConversationItem
@@ -115,7 +115,7 @@ Client components call useSession() (no extra DB fetch)
 |---|---|---|
 | `id` | uuid PK | references `auth.users(id)` |
 | `display_name` | text NOT NULL | |
-| `avatar_url` | text | nullable |
+| `avatar_url` | text | nullable — v1: user-supplied URL only, no file upload |
 | `updated_at` | timestamptz | |
 
 Created automatically via DB trigger on `auth.users` insert.
@@ -139,7 +139,7 @@ Created automatically via DB trigger on `auth.users` insert.
 **messages**
 - SELECT: `auth.uid() = sender_id OR receiver_id`
 - INSERT: `auth.uid() = sender_id`
-- UPDATE: `auth.uid() = sender_id` (read_at updated via RPC)
+- UPDATE: `auth.uid() = sender_id` (read_at updated via `mark_messages_read(sender_id, receiver_id)` RPC — allows receiver to mark messages read without violating the sender-only UPDATE policy)
 - DELETE: not allowed
 
 ### Realtime Channels
