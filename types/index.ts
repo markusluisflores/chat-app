@@ -2,7 +2,7 @@ export type Profile = {
   id: string
   display_name: string
   avatar_url: string | null
-  updated_at: string
+  updated_at: string | null
 }
 
 export type Message = {
