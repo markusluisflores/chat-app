@@ -16,6 +16,11 @@ export function useMessages(
   useEffect(() => {
     const channelName = buildChannelName(currentUserId, otherUserId)
 
+    // Supabase Realtime postgres_changes respects Row Level Security:
+    // only rows matching the authenticated user's RLS SELECT policy are broadcast.
+    // Our messages_select_participant policy ensures only messages where
+    // auth.uid() = sender_id OR receiver_id are ever sent to this client.
+    // The JS-side isRelevant guard below is a second layer of defense.
     const channel = supabase
       .channel(channelName)
       .on(
@@ -28,6 +33,7 @@ export function useMessages(
         },
         (payload) => {
           const incoming = payload.new as Message
+          // Guard: only append messages strictly between this pair of users.
           const isRelevant =
             (incoming.sender_id === currentUserId &&
               incoming.receiver_id === otherUserId) ||
@@ -35,7 +41,11 @@ export function useMessages(
               incoming.receiver_id === currentUserId)
 
           if (isRelevant) {
-            setMessages((prev) => [...prev, incoming])
+            setMessages((prev) => {
+              // Deduplicate by id to handle any SSR/Realtime overlap.
+              if (prev.some((m) => m.id === incoming.id)) return prev
+              return [...prev, incoming]
+            })
           }
         }
       )

@@ -21,6 +21,9 @@ export function MessageInput({ currentUserId, otherUserId }: Props) {
     setIsSending(true)
     setError(null)
 
+    // Supabase RLS policy messages_insert_as_sender enforces
+    // auth.uid() = sender_id — this insert will be rejected by the
+    // database if sender_id doesn't match the authenticated user.
     const { error } = await supabase.from('messages').insert({
       sender_id: currentUserId,
       receiver_id: otherUserId,
