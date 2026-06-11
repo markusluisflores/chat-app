@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npm install *)",
+      "Bash(npm ci)",
+      "Bash(npx *)",
+      "Bash(node *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$filePath = ($env:CLAUDE_TOOL_INPUT | ConvertFrom-Json).file_path; if ($filePath) { npx prettier --write --ignore-unknown $filePath }; exit 0",
+            "shell": "powershell",
+            "statusMessage": "Formatting..."
+          }
+        ]
+      }
+    ]
+  }
+}
