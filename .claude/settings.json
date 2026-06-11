@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "Get-Date | Out-File -Append C:\\Temp\\hook-fired.txt; exit 0",
+            "command": "$filePath = ($env:CLAUDE_TOOL_INPUT | ConvertFrom-Json).file_path; if ($filePath) { npx prettier --write --ignore-unknown $filePath }; exit 0",
             "shell": "powershell",
             "statusMessage": "Formatting..."
           }
