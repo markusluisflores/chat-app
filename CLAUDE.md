@@ -52,7 +52,7 @@ Route protection is in `app/(chat)/layout.tsx`, not in the proxy.
 
 ### Realtime
 
-**Presence** — `context/PresenceContext.tsx` holds a single `presence:online` channel. All three consumers (`NavSidebar`, `ConversationList`, `ChatPanel`) call `usePresence()` from this context. Do NOT call `supabase.channel('presence:online')` in multiple components simultaneously — `createBrowserClient` is a singleton and `supabase.channel()` reuses channels by topic, causing a "cannot add presence callbacks after subscribe()" error.
+**Presence** — `context/PresenceContext.tsx` holds a single `presence:online` channel. All three consumers (`NavSidebar`, `ConversationList`, `ChatPanel`) call `usePresence()` from this context. Do NOT call `supabase.channel('presence:online')` in multiple components simultaneously — `createBrowserClient` is a singleton and `supabase.channel()` reuses channels by topic, causing a "cannot add presence callbacks after subscribe()" error. See [ADR-001](docs/adr/ADR-001-presence-context-singleton.md).
 
 **Messages** — `hooks/useMessages.ts` subscribes to `postgres_changes` INSERT on `messages`, filtered to the active conversation pair.
 
@@ -61,11 +61,11 @@ Route protection is in `app/(chat)/layout.tsx`, not in the proxy.
 channel.teardown()
 ;(supabase.realtime as any)._remove(channel)
 ```
-`supabase.removeChannel()` is async and leaves the channel in the internal array long enough for React Strict Mode's double-invoke to pick it up as already-subscribed.
+`supabase.removeChannel()` is async and leaves the channel in the internal array long enough for React Strict Mode's double-invoke to pick it up as already-subscribed. See [ADR-005](docs/adr/ADR-005-realtime-channel-cleanup.md).
 
 ### Database schema
 
-Two tables: `profiles` (one row per auth user, auto-created by trigger on `auth.users`) and `messages`. RLS is enabled on both. Key policies: only participants can read messages; only senders can insert (enforced by `auth.uid() = sender_id`). `mark_messages_read(p_sender_id, p_receiver_id)` is a security-definer RPC used by the receiver to mark messages read without violating the sender-only UPDATE policy.
+Two tables: `profiles` (one row per auth user, auto-created by trigger on `auth.users`) and `messages`. RLS is enabled on both. Key policies: only participants can read messages; only senders can insert (enforced by `auth.uid() = sender_id`). `mark_messages_read(p_sender_id, p_receiver_id)` is a security-definer RPC used by the receiver to mark messages read without violating the sender-only UPDATE policy. See [ADR-004](docs/adr/ADR-004-mark-messages-read-rpc.md).
 
 Migrations live in `supabase/migrations/` (001–005) and have been applied to the remote project.
 
