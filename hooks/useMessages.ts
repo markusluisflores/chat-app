@@ -59,7 +59,7 @@ export function useMessages(
 
     return () => {
       channel.teardown()
-      ;(supabase.realtime as any)._remove(channel)
+      ;(supabase.realtime as unknown as { _remove: (ch: typeof channel) => void })._remove(channel)
     }
   }, [currentUserId, otherUserId])
 
