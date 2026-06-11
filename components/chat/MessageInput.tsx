@@ -56,7 +56,7 @@ export function MessageInput({ currentUserId, otherUserId }: Props) {
           value={content}
           onChange={(e) => setContent(e.target.value)}
           placeholder="Write a message..."
-          className="flex-1 px-4 py-2 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="flex-1 px-4 py-2 border border-gray-200 rounded-full text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <button
           type="submit"
