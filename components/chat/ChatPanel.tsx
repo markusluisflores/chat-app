@@ -13,7 +13,7 @@ type Props = {
 }
 
 export function ChatPanel({ currentUserId, otherUser, initialMessages }: Props) {
-  const { isOnline } = usePresence(currentUserId)
+  const { isOnline } = usePresence()
 
   return (
     <div className="flex flex-col h-full">

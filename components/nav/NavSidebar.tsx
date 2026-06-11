@@ -15,7 +15,7 @@ type Props = {
 
 export function NavSidebar({ currentUserId, profiles }: Props) {
   const [search, setSearch] = useState('')
-  const { isOnline } = usePresence(currentUserId)
+  const { isOnline } = usePresence()
   const { session } = useSession()
   const supabase = createClient()
   const router = useRouter()
@@ -48,24 +48,15 @@ export function NavSidebar({ currentUserId, profiles }: Props) {
           Contacts
         </p>
         {filtered.map((profile) => (
-          <UserCard
-            key={profile.id}
-            profile={profile}
-            isOnline={isOnline(profile.id)}
-          />
+          <UserCard key={profile.id} profile={profile} isOnline={isOnline(profile.id)} />
         ))}
       </div>
       <div className="p-3 border-t border-gray-100 flex items-center gap-2">
         <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
           {session?.displayName?.[0]?.toUpperCase() ?? '?'}
         </div>
-        <span className="text-sm text-gray-700 truncate flex-1">
-          {session?.displayName}
-        </span>
-        <button
-          onClick={handleSignOut}
-          className="text-xs text-gray-400 hover:text-gray-600"
-        >
+        <span className="text-sm text-gray-700 truncate flex-1">{session?.displayName}</span>
+        <button onClick={handleSignOut} className="text-xs text-gray-400 hover:text-gray-600">
           Out
         </button>
       </div>

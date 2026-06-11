@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npm install *)",
+      "Bash(npm ci)",
+      "Bash(npx *)",
+      "Bash(node *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "Get-Date | Out-File -Append C:\\Temp\\hook-fired.txt; exit 0",
+            "shell": "powershell",
+            "statusMessage": "Formatting..."
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -12,6 +12,7 @@ export function RegisterForm() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [confirmationSent, setConfirmationSent] = useState(false)
   const supabase = createClient()
 
   async function handleSubmit(e: React.FormEvent) {
@@ -19,7 +20,7 @@ export function RegisterForm() {
     setIsLoading(true)
     setError(null)
 
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { display_name: displayName } },
@@ -30,8 +31,32 @@ export function RegisterForm() {
       setIsLoading(false)
       return
     }
-    router.push('/chat')
-    router.refresh()
+
+    if (data.session) {
+      // Email confirmation is disabled — session is live immediately
+      router.push('/chat')
+      router.refresh()
+    } else {
+      // Email confirmation required — show check-your-email state
+      setConfirmationSent(true)
+      setIsLoading(false)
+    }
+  }
+
+  if (confirmationSent) {
+    return (
+      <div className="text-center space-y-4">
+        <div className="text-4xl">📬</div>
+        <h2 className="text-lg font-semibold text-gray-900">Check your email</h2>
+        <p className="text-sm text-gray-500">
+          We sent a confirmation link to <span className="font-medium text-gray-700">{email}</span>.
+          Click it to activate your account, then sign in.
+        </p>
+        <Link href="/login" className="block w-full py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-center">
+          Go to sign in
+        </Link>
+      </div>
+    )
   }
 
   return (

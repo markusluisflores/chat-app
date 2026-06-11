@@ -52,7 +52,8 @@ export function useMessages(
       .subscribe()
 
     return () => {
-      supabase.removeChannel(channel)
+      channel.teardown()
+      ;(supabase.realtime as any)._remove(channel)
     }
   }, [currentUserId, otherUserId])
 

@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { NavSidebar } from '@/components/nav/NavSidebar'
 import { ConversationList } from '@/components/conversations/ConversationList'
+import { PresenceProvider } from '@/context/PresenceContext'
 
 export default async function ChatLayout({
   children,
@@ -22,10 +23,12 @@ export default async function ChatLayout({
     .order('display_name')
 
   return (
-    <div className="flex h-screen overflow-hidden bg-white">
-      <NavSidebar currentUserId={user.id} profiles={profiles ?? []} />
-      <ConversationList currentUserId={user.id} profiles={profiles ?? []} />
-      <main className="flex-1 flex flex-col overflow-hidden">{children}</main>
-    </div>
+    <PresenceProvider currentUserId={user.id}>
+      <div className="flex h-screen overflow-hidden bg-white">
+        <NavSidebar currentUserId={user.id} profiles={profiles ?? []} />
+        <ConversationList currentUserId={user.id} profiles={profiles ?? []} />
+        <main className="flex-1 flex flex-col overflow-hidden">{children}</main>
+      </div>
+    </PresenceProvider>
   )
 }

@@ -19,7 +19,7 @@ type ConversationSummary = {
 
 export function ConversationList({ currentUserId, profiles }: Props) {
   const pathname = usePathname()
-  const { isOnline } = usePresence(currentUserId)
+  const { isOnline } = usePresence()
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const supabase = createClient()
 
