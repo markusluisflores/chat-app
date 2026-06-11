@@ -53,11 +53,11 @@ export function NavSidebar({ currentUserId, profiles }: Props) {
       </div>
       <div className="p-3 border-t border-gray-100 flex items-center gap-2">
         <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
-          {session?.displayName?.[0]?.toUpperCase() ?? '?'}
+          {(session?.displayName?.[0] ?? '?').toUpperCase()}
         </div>
         <span className="text-sm text-gray-700 truncate flex-1">{session?.displayName}</span>
         <button onClick={handleSignOut} className="text-xs text-gray-400 hover:text-gray-600">
-          Out
+          Sign out
         </button>
       </div>
     </aside>

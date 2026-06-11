@@ -7,9 +7,10 @@ type Props = {
   lastMessage: Message | null
   isOnline: boolean
   isActive: boolean
+  currentUserId: string
 }
 
-export function ConversationItem({ user, lastMessage, isOnline, isActive }: Props) {
+export function ConversationItem({ user, lastMessage, isOnline, isActive, currentUserId }: Props) {
   return (
     <Link href={`/chat/${user.id}`}>
       <div
@@ -26,7 +27,7 @@ export function ConversationItem({ user, lastMessage, isOnline, isActive }: Prop
             />
           ) : (
             <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-sm font-medium text-gray-600">
-              {user.display_name[0].toUpperCase()}
+              {(user.display_name[0] ?? '?').toUpperCase()}
             </div>
           )}
           <span
@@ -49,7 +50,7 @@ export function ConversationItem({ user, lastMessage, isOnline, isActive }: Prop
           {lastMessage && (
             <p
               className={`text-xs truncate ${
-                lastMessage.read_at === null
+                lastMessage.read_at === null && lastMessage.sender_id !== currentUserId
                   ? 'font-semibold text-gray-900'
                   : 'text-gray-500'
               }`}

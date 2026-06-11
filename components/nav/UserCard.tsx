@@ -19,7 +19,7 @@ export function UserCard({ profile, isOnline }: Props) {
             />
           ) : (
             <div className="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center text-xs font-medium text-gray-600">
-              {profile.display_name[0].toUpperCase()}
+              {(profile.display_name[0] ?? '?').toUpperCase()}
             </div>
           )}
           <span

@@ -46,7 +46,7 @@ export function MessageInput({ currentUserId, otherUserId }: Props) {
         <p className="text-xs text-red-500 mb-1">
           {error}{' '}
           <button className="underline" onClick={() => setError(null)}>
-            Retry
+            Dismiss
           </button>
         </p>
       )}

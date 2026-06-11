@@ -11,14 +11,14 @@ const mockChannel = {
     return mockChannel
   }),
   subscribe: vi.fn(() => mockChannel),
+  teardown: vi.fn(),
 }
-
-const mockRemoveChannel = vi.fn()
 
 vi.mock('@/lib/supabase/client', () => ({
   createClient: vi.fn(() => ({
     channel: vi.fn(() => mockChannel),
-    removeChannel: mockRemoveChannel,
+    realtime: { _remove: vi.fn() },
+    rpc: vi.fn().mockResolvedValue({ error: null }),
   })),
 }))
 

@@ -30,6 +30,7 @@ export function ConversationList({ currentUserId, profiles }: Props) {
         .select('*')
         .or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`)
         .order('created_at', { ascending: false })
+        .limit(500)
 
       const lastByUser = new Map<string, Message>()
       for (const msg of messages ?? []) {
@@ -72,6 +73,7 @@ export function ConversationList({ currentUserId, profiles }: Props) {
             lastMessage={lastMessage}
             isOnline={isOnline(profile.id)}
             isActive={pathname === `/chat/${profile.id}`}
+            currentUserId={currentUserId}
           />
         ))}
       </div>

@@ -51,6 +51,12 @@ export function useMessages(
       )
       .subscribe()
 
+    // Mark messages from otherUser as read when conversation opens
+    supabase.rpc('mark_messages_read', {
+      p_sender_id: otherUserId,
+      p_receiver_id: currentUserId,
+    })
+
     return () => {
       channel.teardown()
       ;(supabase.realtime as any)._remove(channel)

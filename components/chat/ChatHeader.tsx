@@ -17,7 +17,7 @@ export function ChatHeader({ user, isOnline }: Props) {
           />
         ) : (
           <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center font-medium text-gray-600">
-            {user.display_name[0].toUpperCase()}
+            {(user.display_name[0] ?? '?').toUpperCase()}
           </div>
         )}
         <span
