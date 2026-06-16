@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { usePathname } from 'next/navigation'
+import type { RealtimePostgresInsertPayload } from '@supabase/supabase-js'
 import type { Profile, Message } from '@/types'
 import { ConversationItem } from './ConversationItem'
 import { usePresence } from '@/hooks/usePresence'
@@ -14,7 +15,15 @@ type Props = {
 
 type ConversationSummary = {
   profile: Pick<Profile, 'id' | 'display_name' | 'avatar_url'>
-  lastMessage: Message | null
+  lastMessage: Message
+}
+
+function sortByRecency(list: ConversationSummary[]): ConversationSummary[] {
+  return [...list].sort(
+    (a, b) =>
+      new Date(b.lastMessage.created_at).getTime() -
+      new Date(a.lastMessage.created_at).getTime()
+  )
 }
 
 export function ConversationList({ currentUserId, profiles }: Props) {
@@ -39,26 +48,62 @@ export function ConversationList({ currentUserId, profiles }: Props) {
         if (!lastByUser.has(otherId)) lastByUser.set(otherId, msg)
       }
 
-      const summaries: ConversationSummary[] = profiles.map((profile) => ({
-        profile,
-        lastMessage: lastByUser.get(profile.id) ?? null,
-      }))
+      const summaries: ConversationSummary[] = []
+      for (const profile of profiles) {
+        const lastMessage = lastByUser.get(profile.id)
+        if (lastMessage) summaries.push({ profile, lastMessage })
+      }
 
-      summaries.sort((a, b) => {
-        if (!a.lastMessage && !b.lastMessage) return 0
-        if (!a.lastMessage) return 1
-        if (!b.lastMessage) return -1
-        return (
-          new Date(b.lastMessage.created_at).getTime() -
-          new Date(a.lastMessage.created_at).getTime()
-        )
-      })
-
-      setConversations(summaries)
+      setConversations(sortByRecency(summaries))
     }
 
     load()
   }, [currentUserId, profiles])
+
+  const handleInsert = useCallback(
+    (payload: RealtimePostgresInsertPayload<Message>) => {
+      const msg = payload.new
+      const otherId =
+        msg.sender_id === currentUserId ? msg.receiver_id : msg.sender_id
+      const profile = profiles.find((p) => p.id === otherId)
+      if (!profile) return
+
+      setConversations((prev) => {
+        const without = prev.filter((c) => c.profile.id !== otherId)
+        return [{ profile, lastMessage: msg }, ...without]
+      })
+    },
+    [currentUserId, profiles]
+  )
+
+  useEffect(() => {
+    const sentChannel = supabase
+      .channel(`conv-sent-${currentUserId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `sender_id=eq.${currentUserId}`,
+      }, handleInsert)
+      .subscribe()
+
+    const rcvdChannel = supabase
+      .channel(`conv-rcvd-${currentUserId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `receiver_id=eq.${currentUserId}`,
+      }, handleInsert)
+      .subscribe()
+
+    return () => {
+      sentChannel.teardown()
+      ;(supabase.realtime as unknown as { _remove: (ch: typeof sentChannel) => void })._remove(sentChannel)
+      rcvdChannel.teardown()
+      ;(supabase.realtime as unknown as { _remove: (ch: typeof rcvdChannel) => void })._remove(rcvdChannel)
+    }
+  }, [currentUserId, handleInsert])
 
   return (
     <aside className="w-[300px] flex-shrink-0 flex flex-col border-r border-gray-100">
