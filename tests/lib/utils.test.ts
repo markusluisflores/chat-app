@@ -47,11 +47,16 @@ describe('validateUsername', () => {
     expect(validateUsername('alice@example')).not.toBeNull()
   })
 
-  it('rejects reserved words', () => {
-    expect(validateUsername('login')).not.toBeNull()
-    expect(validateUsername('register')).not.toBeNull()
-    expect(validateUsername('chat')).not.toBeNull()
-    expect(validateUsername('api')).not.toBeNull()
-    expect(validateUsername('auth')).not.toBeNull()
+  it('rejects the empty string', () => {
+    expect(validateUsername('')).not.toBeNull()
+  })
+
+  it('rejects reserved words with a specific message', () => {
+    expect(validateUsername('login')).toBe('That username is reserved')
+    expect(validateUsername('register')).toBe('That username is reserved')
+    expect(validateUsername('chat')).toBe('That username is reserved')
+    expect(validateUsername('api')).toBe('That username is reserved')
+    expect(validateUsername('auth')).toBe('That username is reserved')
+    expect(validateUsername('settings')).toBe('That username is reserved')
   })
 })
