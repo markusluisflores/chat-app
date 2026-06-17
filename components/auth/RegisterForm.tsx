@@ -36,7 +36,10 @@ export function RegisterForm() {
     })
 
     if (error) {
-      setError(error.message)
+      const msg = (error as { code?: string }).code === '23505'
+        ? 'Username is already taken'
+        : error.message
+      setError(msg)
       setIsLoading(false)
       return
     }
