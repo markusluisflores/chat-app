@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { Profile } from '@/types'
 import { UserCard } from './UserCard'
@@ -56,6 +57,9 @@ export function NavSidebar({ currentUserId, profiles }: Props) {
           {(session?.displayName?.[0] ?? '?').toUpperCase()}
         </div>
         <span className="text-sm text-gray-700 truncate flex-1">{session?.displayName}</span>
+        <Link href="/settings" className="text-xs text-gray-400 hover:text-gray-600">
+          Settings
+        </Link>
         <button onClick={handleSignOut} className="text-xs text-gray-400 hover:text-gray-600">
           Sign out
         </button>
