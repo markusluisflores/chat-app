@@ -38,7 +38,7 @@ describe('ConversationItem', () => {
     expect(screen.getByText('Alice')).toBeInTheDocument()
   })
 
-  it('links to /chat/{username}', () => {
+  it('links to /chat/<username>', () => {
     render(
       <ConversationItem user={profile} lastMessage={null} isOnline={false} isActive={false} currentUserId="user-a" />
     )
