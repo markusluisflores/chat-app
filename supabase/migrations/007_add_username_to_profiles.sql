@@ -25,10 +25,14 @@ BEGIN
       regexp_replace(lower(split_part(rec.email, '@', 1)), '[^a-z0-9_-]', '-', 'g'),
       30
     );
+    -- Ensure minimum 3 characters
+    IF length(base_name) < 3 THEN
+      base_name := rpad(base_name, 3, '0');
+    END IF;
     candidate := base_name;
     suffix := 2;
     WHILE EXISTS (SELECT 1 FROM public.profiles WHERE username = candidate) LOOP
-      candidate := left(base_name, 27) || '-' || suffix::text;
+      candidate := left(base_name, 30 - 1 - length(suffix::text)) || '-' || suffix::text;
       suffix := suffix + 1;
     END LOOP;
     UPDATE public.profiles SET username = candidate WHERE id = rec.id;
@@ -50,7 +54,10 @@ BEGIN
     new.id,
     COALESCE(new.raw_user_meta_data->>'display_name', split_part(new.email, '@', 1)),
     new.raw_user_meta_data->>'avatar_url',
-    new.raw_user_meta_data->>'username'
+    COALESCE(
+      new.raw_user_meta_data->>'username',
+      regexp_replace(lower(split_part(new.email, '@', 1)), '[^a-z0-9_-]', '-', 'g')
+    )
   );
   RETURN new;
 END;
