@@ -18,7 +18,7 @@ export default async function ChatLayout({
 
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('id, display_name, avatar_url')
+    .select('id, display_name, avatar_url, username')
     .neq('id', user.id)
     .order('display_name')
 
