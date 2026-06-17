@@ -2,13 +2,13 @@ import Link from 'next/link'
 import type { Profile } from '@/types'
 
 type Props = {
-  profile: Pick<Profile, 'id' | 'display_name' | 'avatar_url'>
+  profile: Pick<Profile, 'id' | 'display_name' | 'avatar_url' | 'username'>
   isOnline: boolean
 }
 
 export function UserCard({ profile, isOnline }: Props) {
   return (
-    <Link href={`/chat/${profile.id}`}>
+    <Link href={`/chat/${profile.username}`}>
       <div className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 cursor-pointer rounded-lg mx-1">
         <div className="relative flex-shrink-0">
           {profile.avatar_url ? (

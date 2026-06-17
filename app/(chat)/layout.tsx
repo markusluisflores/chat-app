@@ -18,14 +18,14 @@ export default async function ChatLayout({
 
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('id, display_name, avatar_url')
+    .select('id, display_name, avatar_url, username')
     .neq('id', user.id)
     .order('display_name')
 
   return (
     <PresenceProvider currentUserId={user.id}>
       <div className="flex h-screen overflow-hidden bg-white">
-        <NavSidebar currentUserId={user.id} profiles={profiles ?? []} />
+        <NavSidebar profiles={profiles ?? []} />
         <ConversationList currentUserId={user.id} profiles={profiles ?? []} />
         <main className="flex-1 flex flex-col overflow-hidden">{children}</main>
       </div>

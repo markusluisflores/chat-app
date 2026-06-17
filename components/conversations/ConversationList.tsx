@@ -10,11 +10,11 @@ import { createClient } from '@/lib/supabase/client'
 
 type Props = {
   currentUserId: string
-  profiles: Pick<Profile, 'id' | 'display_name' | 'avatar_url'>[]
+  profiles: Pick<Profile, 'id' | 'display_name' | 'avatar_url' | 'username'>[]
 }
 
 type ConversationSummary = {
-  profile: Pick<Profile, 'id' | 'display_name' | 'avatar_url'>
+  profile: Pick<Profile, 'id' | 'display_name' | 'avatar_url' | 'username'>
   lastMessage: Message
 }
 
@@ -117,7 +117,7 @@ export function ConversationList({ currentUserId, profiles }: Props) {
             user={profile}
             lastMessage={lastMessage}
             isOnline={isOnline(profile.id)}
-            isActive={pathname === `/chat/${profile.id}`}
+            isActive={pathname === `/chat/${profile.username}`}
             currentUserId={currentUserId}
           />
         ))}

@@ -9,10 +9,11 @@ vi.mock('next/link', () => ({
     React.createElement('a', { href }, children),
 }))
 
-const profile: Pick<Profile, 'id' | 'display_name' | 'avatar_url'> = {
+const profile: Pick<Profile, 'id' | 'display_name' | 'avatar_url' | 'username'> = {
   id: 'user-b',
   display_name: 'Alice',
   avatar_url: null,
+  username: 'alice',
 }
 
 const unreadMessage: Message = {
@@ -32,42 +33,49 @@ const readMessage: Message = {
 describe('ConversationItem', () => {
   it('renders the user display name', () => {
     render(
-      <ConversationItem user={profile} lastMessage={null} isOnline={false} isActive={false} />
+      <ConversationItem user={profile} lastMessage={null} isOnline={false} isActive={false} currentUserId="user-a" />
     )
     expect(screen.getByText('Alice')).toBeInTheDocument()
   })
 
+  it('links to /chat/<username>', () => {
+    render(
+      <ConversationItem user={profile} lastMessage={null} isOnline={false} isActive={false} currentUserId="user-a" />
+    )
+    expect(screen.getByRole('link')).toHaveAttribute('href', '/chat/alice')
+  })
+
   it('shows message content when lastMessage is provided', () => {
     render(
-      <ConversationItem user={profile} lastMessage={unreadMessage} isOnline={false} isActive={false} />
+      <ConversationItem user={profile} lastMessage={unreadMessage} isOnline={false} isActive={false} currentUserId="user-a" />
     )
     expect(screen.getByText('Hey there')).toBeInTheDocument()
   })
 
   it('applies font-semibold when read_at is null (unread)', () => {
     render(
-      <ConversationItem user={profile} lastMessage={unreadMessage} isOnline={false} isActive={false} />
+      <ConversationItem user={profile} lastMessage={unreadMessage} isOnline={false} isActive={false} currentUserId="user-b" />
     )
     expect(screen.getByText('Hey there')).toHaveClass('font-semibold')
   })
 
   it('does not apply font-semibold when read_at is set (read)', () => {
     render(
-      <ConversationItem user={profile} lastMessage={readMessage} isOnline={false} isActive={false} />
+      <ConversationItem user={profile} lastMessage={readMessage} isOnline={false} isActive={false} currentUserId="user-b" />
     )
     expect(screen.getByText('Hey there')).not.toHaveClass('font-semibold')
   })
 
   it('shows green online indicator when isOnline is true', () => {
     const { container } = render(
-      <ConversationItem user={profile} lastMessage={null} isOnline={true} isActive={false} />
+      <ConversationItem user={profile} lastMessage={null} isOnline={true} isActive={false} currentUserId="user-a" />
     )
     expect(container.querySelector('.bg-green-400')).toBeInTheDocument()
   })
 
   it('shows gray offline indicator when isOnline is false', () => {
     const { container } = render(
-      <ConversationItem user={profile} lastMessage={null} isOnline={false} isActive={false} />
+      <ConversationItem user={profile} lastMessage={null} isOnline={false} isActive={false} currentUserId="user-a" />
     )
     expect(container.querySelector('.bg-gray-300')).toBeInTheDocument()
   })

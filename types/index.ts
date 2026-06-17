@@ -3,6 +3,7 @@ export type Profile = {
   display_name: string
   avatar_url: string | null
   updated_at: string | null
+  username: string
 }
 
 export type Message = {
