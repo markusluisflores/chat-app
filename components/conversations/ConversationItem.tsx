@@ -3,7 +3,7 @@ import type { Profile, Message } from '@/types'
 import { formatTime } from '@/lib/utils'
 
 type Props = {
-  user: Pick<Profile, 'id' | 'display_name' | 'avatar_url'>
+  user: Pick<Profile, 'id' | 'display_name' | 'avatar_url' | 'username'>
   lastMessage: Message | null
   isOnline: boolean
   isActive: boolean
@@ -12,7 +12,7 @@ type Props = {
 
 export function ConversationItem({ user, lastMessage, isOnline, isActive, currentUserId }: Props) {
   return (
-    <Link href={`/chat/${user.id}`}>
+    <Link href={`/chat/${user.username}`}>
       <div
         className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 ${
           isActive ? 'bg-blue-50' : ''
