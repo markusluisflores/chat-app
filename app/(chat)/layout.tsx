@@ -25,7 +25,7 @@ export default async function ChatLayout({
   return (
     <PresenceProvider currentUserId={user.id}>
       <div className="flex h-screen overflow-hidden bg-white">
-        <NavSidebar currentUserId={user.id} profiles={profiles ?? []} />
+        <NavSidebar profiles={profiles ?? []} />
         <ConversationList currentUserId={user.id} profiles={profiles ?? []} />
         <main className="flex-1 flex flex-col overflow-hidden">{children}</main>
       </div>

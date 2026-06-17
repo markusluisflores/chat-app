@@ -21,7 +21,7 @@ export default async function SettingsPage() {
   return (
     <UsernameForm
       currentUserId={user.id}
-      currentUsername={profile?.username ?? ''}
+      currentUsername={profile.username}
     />
   )
 }

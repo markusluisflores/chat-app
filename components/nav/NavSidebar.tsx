@@ -10,11 +10,10 @@ import { useSession } from '@/hooks/useSession'
 import { createClient } from '@/lib/supabase/client'
 
 type Props = {
-  currentUserId: string
   profiles: Pick<Profile, 'id' | 'display_name' | 'avatar_url' | 'username'>[]
 }
 
-export function NavSidebar({ currentUserId, profiles }: Props) {
+export function NavSidebar({ profiles }: Props) {
   const [search, setSearch] = useState('')
   const { isOnline } = usePresence()
   const { session } = useSession()
