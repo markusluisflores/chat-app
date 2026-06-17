@@ -33,7 +33,10 @@ describe('UsernameForm', () => {
     await user.clear(screen.getByRole('textbox'))
     await user.type(screen.getByRole('textbox'), 'ab')
     await user.click(screen.getByRole('button', { name: /save/i }))
-    expect(screen.getByText(/3.30 characters/i)).toBeInTheDocument()
+    const errorParagraph = screen.queryAllByText(/3–30/).find(
+      (el) => el.className === 'text-sm text-red-600'
+    )
+    expect(errorParagraph).toBeInTheDocument()
   })
 
   it('shows a validation error for a reserved username', async () => {

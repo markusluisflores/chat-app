@@ -28,11 +28,16 @@ export function UsernameForm({ currentUserId, currentUsername }: Props) {
     }
 
     setLoading(true)
-    const { error: dbError } = await supabase
-      .from('profiles')
-      .update({ username })
-      .eq('id', currentUserId)
-    setLoading(false)
+    let dbError: { code?: string; message?: string } | null = null
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ username })
+        .eq('id', currentUserId)
+      dbError = error
+    } finally {
+      setLoading(false)
+    }
 
     if (dbError) {
       setError(
@@ -65,10 +70,11 @@ export function UsernameForm({ currentUserId, currentUsername }: Props) {
               setUsername(e.target.value)
               setSuccess(false)
             }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={loading}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
           />
           <p className="mt-1 text-xs text-gray-400">
-            Lowercase letters, numbers, hyphens, and underscores only
+            3–30 characters · lowercase letters, numbers, - and _ only
           </p>
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
@@ -78,7 +84,7 @@ export function UsernameForm({ currentUserId, currentUsername }: Props) {
           disabled={loading}
           className="px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 disabled:opacity-50"
         >
-          Save
+          {loading ? 'Saving…' : 'Save'}
         </button>
       </form>
     </div>

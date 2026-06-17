@@ -16,6 +16,8 @@ export default async function SettingsPage() {
     .eq('id', user.id)
     .single()
 
+  if (!profile) redirect('/login')
+
   return (
     <UsernameForm
       currentUserId={user.id}
