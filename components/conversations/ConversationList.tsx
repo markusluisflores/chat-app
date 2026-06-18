@@ -30,6 +30,7 @@ export function ConversationList({ currentUserId, profiles }: Props) {
   const pathname = usePathname()
   const { isOnline } = usePresence()
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
+  const [readUserIds, setReadUserIds] = useState<Set<string>>(new Set())
   const supabase = createClient()
 
   useEffect(() => {
@@ -118,7 +119,9 @@ export function ConversationList({ currentUserId, profiles }: Props) {
             lastMessage={lastMessage}
             isOnline={isOnline(profile.id)}
             isActive={pathname === `/chat/${profile.username}`}
+            isRead={readUserIds.has(profile.id)}
             currentUserId={currentUserId}
+            onOpen={() => setReadUserIds((prev) => new Set([...prev, profile.id]))}
           />
         ))}
       </div>
