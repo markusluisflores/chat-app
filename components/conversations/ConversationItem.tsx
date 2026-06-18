@@ -50,7 +50,7 @@ export function ConversationItem({ user, lastMessage, isOnline, isActive, curren
           {lastMessage && (
             <p
               className={`text-xs truncate ${
-                lastMessage.read_at === null && lastMessage.sender_id !== currentUserId
+                !isActive && lastMessage.read_at === null && lastMessage.sender_id !== currentUserId
                   ? 'font-semibold text-gray-900'
                   : 'text-gray-500'
               }`}

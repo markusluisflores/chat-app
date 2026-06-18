@@ -52,7 +52,7 @@ describe('ConversationItem', () => {
     expect(screen.getByText('Hey there')).toBeInTheDocument()
   })
 
-  it('applies font-semibold when read_at is null (unread)', () => {
+  it('applies font-semibold when read_at is null and conversation is not active (unread)', () => {
     render(
       <ConversationItem user={profile} lastMessage={unreadMessage} isOnline={false} isActive={false} currentUserId="user-b" />
     )
@@ -62,6 +62,13 @@ describe('ConversationItem', () => {
   it('does not apply font-semibold when read_at is set (read)', () => {
     render(
       <ConversationItem user={profile} lastMessage={readMessage} isOnline={false} isActive={false} currentUserId="user-b" />
+    )
+    expect(screen.getByText('Hey there')).not.toHaveClass('font-semibold')
+  })
+
+  it('does not apply font-semibold when conversation is active, even if read_at is null', () => {
+    render(
+      <ConversationItem user={profile} lastMessage={unreadMessage} isOnline={false} isActive={true} currentUserId="user-b" />
     )
     expect(screen.getByText('Hey there')).not.toHaveClass('font-semibold')
   })
