@@ -30,11 +30,15 @@ vi.mock('@/lib/supabase/client', () => ({
     })),
     channel: vi.fn((name: string) => {
       const ch = {
-        on: vi.fn((_event: string, _filter: object, handler: (payload: unknown) => void) => {
-          channelHandlers.set(name, handler)
+        on: vi.fn((_event: string, _filter: unknown, handler?: (payload: unknown) => void) => {
+          if (handler) {
+            channelHandlers.set(name, handler)
+          }
           return ch
         }),
-        subscribe: vi.fn().mockReturnValue(undefined),
+        subscribe: vi.fn(function() {
+          return this
+        }),
         teardown: vi.fn(),
       }
       return ch
