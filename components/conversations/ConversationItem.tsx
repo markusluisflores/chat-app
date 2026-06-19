@@ -7,12 +7,14 @@ type Props = {
   lastMessage: Message | null
   isOnline: boolean
   isActive: boolean
+  isRead: boolean
   currentUserId: string
+  onOpen: () => void
 }
 
-export function ConversationItem({ user, lastMessage, isOnline, isActive, currentUserId }: Props) {
+export function ConversationItem({ user, lastMessage, isOnline, isActive, isRead, currentUserId, onOpen }: Props) {
   return (
-    <Link href={`/chat/${user.username}`}>
+    <Link href={`/chat/${user.username}`} onClick={onOpen}>
       <div
         className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 ${
           isActive ? 'bg-blue-50' : ''
@@ -50,7 +52,7 @@ export function ConversationItem({ user, lastMessage, isOnline, isActive, curren
           {lastMessage && (
             <p
               className={`text-xs truncate ${
-                lastMessage.read_at === null && lastMessage.sender_id !== currentUserId
+                !isActive && !isRead && lastMessage.read_at === null && lastMessage.sender_id !== currentUserId
                   ? 'font-semibold text-gray-900'
                   : 'text-gray-500'
               }`}
