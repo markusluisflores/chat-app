@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { usePathname } from 'next/navigation'
 import type { RealtimePostgresInsertPayload, RealtimePostgresUpdatePayload } from '@supabase/supabase-js'
 import type { Profile, Message } from '@/types'
@@ -35,12 +35,16 @@ export function ConversationList({ currentUserId, profiles }: Props) {
   // to handleInsert's dependency array (which would teardown/resubscribe message channels).
   const profilesRef = useRef(profiles)
   const activeUsernameRef = useRef<string | null>(null)
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   useEffect(() => {
     const match = pathname.match(/^\/chat\/([^/]+)$/)
     activeUsernameRef.current = match ? match[1] : null
   }, [pathname])
+
+  useEffect(() => {
+    profilesRef.current = profiles
+  }, [profiles])
 
   useEffect(() => {
     async function load() {
@@ -68,7 +72,7 @@ export function ConversationList({ currentUserId, profiles }: Props) {
     }
 
     load()
-  }, [currentUserId, profiles])
+  }, [currentUserId, profiles, supabase])
 
   const handleInsert = useCallback(
     (payload: RealtimePostgresInsertPayload<Message>) => {
@@ -115,7 +119,7 @@ export function ConversationList({ currentUserId, profiles }: Props) {
       profilesChannel.teardown()
       ;(supabase.realtime as unknown as { _remove: (ch: typeof profilesChannel) => void })._remove(profilesChannel)
     }
-  }, [currentUserId])
+  }, [currentUserId, supabase])
 
   useEffect(() => {
     const sentChannel = supabase
@@ -144,7 +148,7 @@ export function ConversationList({ currentUserId, profiles }: Props) {
       rcvdChannel.teardown()
       ;(supabase.realtime as unknown as { _remove: (ch: typeof rcvdChannel) => void })._remove(rcvdChannel)
     }
-  }, [currentUserId, handleInsert])
+  }, [currentUserId, handleInsert, supabase])
 
   return (
     <aside className="w-[300px] flex-shrink-0 flex flex-col border-r border-gray-100">
