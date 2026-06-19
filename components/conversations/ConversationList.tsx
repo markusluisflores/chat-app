@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { usePathname } from 'next/navigation'
 import type { RealtimePostgresInsertPayload } from '@supabase/supabase-js'
 import type { Profile, Message } from '@/types'
@@ -30,7 +30,19 @@ export function ConversationList({ currentUserId, profiles }: Props) {
   const pathname = usePathname()
   const { isOnline } = usePresence()
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
+  // Maps otherId -> created_at of the last message the user saw when they opened the conversation.
+  // A conversation is "read" if its current lastMessage.created_at <= this timestamp.
+  // When a newer message arrives, the comparison fails and bold returns.
+  const [readTimestamps, setReadTimestamps] = useState<Map<string, string>>(new Map())
+  // Ref so handleInsert can check the active conversation without adding pathname
+  // to its dependency array (which would teardown/resubscribe on every navigation).
+  const activeUsernameRef = useRef<string | null>(null)
   const supabase = createClient()
+
+  useEffect(() => {
+    const match = pathname.match(/^\/chat\/([^/]+)$/)
+    activeUsernameRef.current = match ? match[1] : null
+  }, [pathname])
 
   useEffect(() => {
     async function load() {
@@ -72,6 +84,12 @@ export function ConversationList({ currentUserId, profiles }: Props) {
         const without = prev.filter((c) => c.profile.id !== otherId)
         return [{ profile, lastMessage: msg }, ...without]
       })
+
+      // If the message arrived while the user is actively viewing this conversation,
+      // advance the read timestamp so navigating away doesn't re-bold it.
+      if (activeUsernameRef.current === profile.username) {
+        setReadTimestamps((prev) => new Map([...prev, [otherId, msg.created_at]]))
+      }
     },
     [currentUserId, profiles]
   )
@@ -111,16 +129,24 @@ export function ConversationList({ currentUserId, profiles }: Props) {
         <h2 className="font-semibold text-gray-800">Open</h2>
       </div>
       <div className="flex-1 overflow-y-auto">
-        {conversations.map(({ profile, lastMessage }) => (
-          <ConversationItem
-            key={profile.id}
-            user={profile}
-            lastMessage={lastMessage}
-            isOnline={isOnline(profile.id)}
-            isActive={pathname === `/chat/${profile.username}`}
-            currentUserId={currentUserId}
-          />
-        ))}
+        {conversations.map(({ profile, lastMessage }) => {
+          const lastSeenAt = readTimestamps.get(profile.id)
+          const isRead = lastSeenAt !== undefined && lastSeenAt >= lastMessage.created_at
+          return (
+            <ConversationItem
+              key={profile.id}
+              user={profile}
+              lastMessage={lastMessage}
+              isOnline={isOnline(profile.id)}
+              isActive={pathname === `/chat/${profile.username}`}
+              isRead={isRead}
+              currentUserId={currentUserId}
+              onOpen={() =>
+                setReadTimestamps((prev) => new Map([...prev, [profile.id, lastMessage.created_at]]))
+              }
+            />
+          )
+        })}
       </div>
     </aside>
   )
