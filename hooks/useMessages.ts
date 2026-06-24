@@ -51,18 +51,20 @@ export function useMessages(
               supabase.rpc('mark_messages_read', {
                 p_sender_id: otherUserId,
                 p_receiver_id: currentUserId,
-              })
+              }).then()
             }
           }
         }
       )
       .subscribe()
 
-    // Mark messages from otherUser as read when conversation opens
+    // Mark messages from otherUser as read when conversation opens.
+    // .then() is required — PostgrestBuilder is lazy and only fires the HTTP
+    // request when the promise chain is consumed.
     supabase.rpc('mark_messages_read', {
       p_sender_id: otherUserId,
       p_receiver_id: currentUserId,
-    })
+    }).then()
 
     return () => {
       channel.teardown()
