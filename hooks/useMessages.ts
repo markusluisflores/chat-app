@@ -46,6 +46,13 @@ export function useMessages(
               if (prev.some((m) => m.id === incoming.id)) return prev
               return [...prev, incoming]
             })
+            // Mark as read immediately so DB reflects reality on refresh.
+            if (incoming.sender_id === otherUserId) {
+              supabase.rpc('mark_messages_read', {
+                p_sender_id: otherUserId,
+                p_receiver_id: currentUserId,
+              })
+            }
           }
         }
       )

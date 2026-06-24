@@ -4,6 +4,7 @@ import { useMessages } from '@/hooks/useMessages'
 import type { Message } from '@/types'
 
 let insertCallback: ((payload: { new: Message }) => void) | null = null
+const mockRpc = vi.fn().mockResolvedValue({ error: null })
 
 const mockChannel = {
   on: vi.fn((_event: string, _opts: unknown, cb: (payload: { new: Message }) => void) => {
@@ -18,7 +19,7 @@ vi.mock('@/lib/supabase/client', () => ({
   createClient: vi.fn(() => ({
     channel: vi.fn(() => mockChannel),
     realtime: { _remove: vi.fn() },
-    rpc: vi.fn().mockResolvedValue({ error: null }),
+    rpc: mockRpc,
   })),
 }))
 
@@ -44,6 +45,7 @@ describe('useMessages', () => {
   beforeEach(() => {
     insertCallback = null
     vi.clearAllMocks()
+    mockRpc.mockResolvedValue({ error: null })
     mockChannel.on.mockImplementation(
       (_event: string, _opts: unknown, cb: (payload: { new: Message }) => void) => {
         insertCallback = cb
@@ -70,6 +72,17 @@ describe('useMessages', () => {
     })
     expect(result.current).toHaveLength(2)
     expect(result.current[1].id).toBe('msg-2')
+  })
+
+  it('calls mark_messages_read when a message arrives from the other user', () => {
+    renderHook(() => useMessages([msg1], 'user-a', 'user-b'))
+    act(() => {
+      insertCallback?.({ new: msg2 }) // msg2 is from user-b → other user
+    })
+    expect(mockRpc).toHaveBeenCalledWith('mark_messages_read', {
+      p_sender_id: 'user-b',
+      p_receiver_id: 'user-a',
+    })
   })
 
   it('ignores messages not belonging to this conversation', () => {
