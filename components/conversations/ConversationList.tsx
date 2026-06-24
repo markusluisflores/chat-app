@@ -30,9 +30,9 @@ export function ConversationList({ currentUserId, profiles }: Props) {
   const pathname = usePathname()
   const { isOnline } = usePresence()
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
-  const [readTimestamps, setReadTimestamps] = useState<Map<string, string>>(new Map())
-  // Holds the latest profile data for handleInsert lookups without adding profiles
-  // to handleInsert's dependency array (which would teardown/resubscribe message channels).
+  // Set of profile IDs whose conversations have been read this session.
+  // Initialized from read_at on load; updated as user opens/receives messages.
+  const [readConversations, setReadConversations] = useState<Set<string>>(new Set())
   const profilesRef = useRef(profiles)
   const activeUsernameRef = useRef<string | null>(null)
   const supabase = useMemo(() => createClient(), [])
@@ -69,6 +69,16 @@ export function ConversationList({ currentUserId, profiles }: Props) {
       }
 
       setConversations(sortByRecency(summaries))
+
+      // A conversation starts as read if current user sent the last message,
+      // or if the DB shows it was already marked read.
+      const initialRead = new Set<string>()
+      for (const { profile, lastMessage } of summaries) {
+        if (lastMessage.sender_id === currentUserId || lastMessage.read_at !== null) {
+          initialRead.add(profile.id)
+        }
+      }
+      setReadConversations(initialRead)
     }
 
     load()
@@ -79,7 +89,6 @@ export function ConversationList({ currentUserId, profiles }: Props) {
       const msg = payload.new
       const otherId =
         msg.sender_id === currentUserId ? msg.receiver_id : msg.sender_id
-      // Use ref so profile username changes don't require re-subscribing message channels
       const profile = profilesRef.current.find((p) => p.id === otherId)
       if (!profile) return
 
@@ -88,8 +97,13 @@ export function ConversationList({ currentUserId, profiles }: Props) {
         return [{ profile, lastMessage: msg }, ...without]
       })
 
-      if (activeUsernameRef.current === profile.username) {
-        setReadTimestamps((prev) => new Map([...prev, [otherId, msg.created_at]]))
+      // Mark as unread only if the other person sent it and we're not in their conversation.
+      if (msg.sender_id === otherId && activeUsernameRef.current !== profile.username) {
+        setReadConversations((prev) => {
+          const next = new Set(prev)
+          next.delete(otherId)
+          return next
+        })
       }
     },
     [currentUserId]
@@ -157,8 +171,9 @@ export function ConversationList({ currentUserId, profiles }: Props) {
       </div>
       <div className="flex-1 overflow-y-auto">
         {conversations.map(({ profile, lastMessage }) => {
-          const lastSeenAt = readTimestamps.get(profile.id)
-          const isRead = lastSeenAt !== undefined && lastSeenAt >= lastMessage.created_at
+          const isRead =
+            lastMessage.sender_id === currentUserId ||
+            readConversations.has(profile.id)
           return (
             <ConversationItem
               key={profile.id}
@@ -167,9 +182,8 @@ export function ConversationList({ currentUserId, profiles }: Props) {
               isOnline={isOnline(profile.id)}
               isActive={pathname === `/chat/${profile.username}`}
               isRead={isRead}
-              currentUserId={currentUserId}
               onOpen={() =>
-                setReadTimestamps((prev) => new Map([...prev, [profile.id, lastMessage.created_at]]))
+                setReadConversations((prev) => new Set([...prev, profile.id]))
               }
             />
           )
