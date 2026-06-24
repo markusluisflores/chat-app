@@ -58,6 +58,8 @@ export default async function globalSetup() {
     signInOrSignUp(USER_A),
   ])
 
+  // Insert a fresh unread message from B → A so the conversation is always
+  // bold at the start of each test run (new message always has read_at = null).
   const res = await fetch(`${SUPABASE_URL}/rest/v1/messages`, {
     method: 'POST',
     headers: {
