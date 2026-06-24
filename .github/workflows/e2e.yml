@@ -1,0 +1,26 @@
+name: E2E
+
+on:
+  deployment_status: {}
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Playwright smoke tests
+    if: github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx playwright install chromium --with-deps
+      - run: npx playwright test
+        env:
+          BASE_URL: ${{ github.event.deployment_status.target_url }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
