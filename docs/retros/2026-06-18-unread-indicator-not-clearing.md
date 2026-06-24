@@ -1,6 +1,7 @@
 # Retro: Unread Bold Indicator Not Clearing (Issue #13)
 
-**Date:** 2026-06-18  
+**Date filed:** 2026-06-18  
+**Date resolved:** 2026-06-23  
 **Type:** incident  
 **Status:** resolved
 
@@ -8,39 +9,42 @@
 
 ## What Went Right
 
-- User caught the regressions quickly during manual testing — clear, specific feedback ("once I click another chat, the old chat returns to bold") made root cause diagnosis fast
-- The final `readTimestamps Map` solution handles all five edge cases correctly and is clean — no hacks, no hidden state, no lint violations
-- The bug skill update (Step 4b) was made in the same session as the bug was filed, so the retro obligation survived the session boundary and was actioned correctly
-- `activeUsernameRef` pattern correctly avoided the channel teardown/resubscribe problem that would have been caused by adding `pathname` to `handleInsert`'s dependency array
-- 43 tests passing at time of merge, including 3 new tests specifically covering the edge cases that previously failed
+- User caught regressions quickly during manual testing — clear, specific feedback made root cause diagnosis achievable
+- `activeUsernameRef` pattern correctly avoided channel teardown/resubscribe that adding `pathname` to `handleInsert`'s dep array would have caused
+- The bug skill Step 4b update (save retro obligation at filing time) worked — the retro requirement survived the session boundary and was actioned
+- Playwright E2E tests were added as part of the fix, giving a regression suite for this exact behavior going forward
 
 ## What Went Wrong
 
-- **Three fix iterations were needed** instead of one. Each iteration uncovered an edge case that should have been identified upfront:
-  1. Attempt 1 (`isActive` suppression): clears bold while viewing, but navigating away restores `isActive=false` with stale `read_at: null` — bold returns
-  2. Attempt 2 (`readUserIds Set`): persists "opened" state, but new messages after reading never re-bold because the user ID stays in the set
-  3. Attempt 3 (`readTimestamps Map`): correct — stores the `created_at` of the last message seen; new messages with a later timestamp fall outside the window and re-bold correctly
+**Four fix iterations were needed instead of one.** Each round uncovered a different layer of the same bug:
 
-- **Root cause of the iterations:** No edge case enumeration was done before implementation. The problem was approached as "suppress bold when opened" rather than "bold = (new message exists that the user hasn't seen yet)." The correct mental model makes all five cases obvious.
+1. **Attempt 1 — `isActive` suppression:** Clears bold while viewing, but navigating away restores `isActive=false` with stale `read_at: null` in DB — bold returns immediately.
 
-- **Contributing factor:** `read_at` in the database is only written by `mark_messages_read` RPC, not by Realtime subscriptions (INSERT only). This means `read_at` on the incoming Realtime message is always `null` — the in-memory tracking layer (`readTimestamps`) is the only source of truth for whether the current session user has seen a message. This constraint wasn't articulated before implementation, which is why the first two attempts leaned on `read_at` implicitly.
+2. **Attempt 2 — `readUserIds Set`:** Persists "opened" state in memory but new messages after reading never re-bold because the profile ID stays in the set permanently.
+
+3. **Attempt 3 — `readTimestamps Map`:** Correct for in-session behavior, but refresh still re-bolded everything. Retro was written at this point (2026-06-18) assuming the fix was done — it wasn't.
+
+4. **Root cause finally found (2026-06-23):** `PostgrestBuilder` from `@supabase/postgrest-js` is **lazy** — the HTTP `fetch` only fires when `.then()` is consumed on the builder. `supabase.rpc('mark_messages_read', ...)` was called without `.then()` at both call sites in `useMessages.ts`, so `read_at` was never written to the DB. Every page refresh re-read `null` values and showed all conversations as bold. This is why fixing the in-memory state (Attempts 1–3) never fixed the refresh case — the DB was never updated.
+
+**A second unrelated root cause was also present:** The `(chat)` layout is a dynamic server component (calls `supabase.auth.getUser()` which reads cookies). Next.js re-renders it on every navigation, sending a new `profiles` array reference each time. That reference was in `load()`'s dependency array, which caused `load()` to re-run on every conversation switch and call `setReadConversations(initialRead)`, wiping all in-session read state. This manifested as the "switch conversations causes bold" regression.
+
+**Contributing factor:** `PostgrestBuilder`'s lazy evaluation is a non-obvious footgun. `supabase.rpc()` looks like a function call but returns a builder object that does nothing until `.then()` is called. No TypeScript error, no runtime warning — the call site looks correct and the unit tests passed (because `vi.fn().mockResolvedValue()` creates an eager Promise, not a lazy builder, masking the divergence from real behavior).
 
 ## What We Can Improve
 
-- Before implementing any "read/unread" or "seen/unseen" state, enumerate the full edge case matrix explicitly:
-  1. New message, never opened → should bold
-  2. Open the conversation → bold clears
-  3. Navigate away → stays non-bold
-  4. New message arrives after reading → re-bolds
-  5. New message arrives while actively viewing → never bolds, stays non-bold after navigating away
+- **Always `await` or chain `.then()` on Supabase query builders**, especially for fire-and-forget calls. `supabase.rpc()`, `supabase.from().insert()`, etc. are lazy — dropping the result silently discards the HTTP request.
 
-  If all five can't be satisfied by the proposed approach, don't start implementing.
+- **Unit test mocks should match the real implementation's execution model.** `vi.fn().mockResolvedValue()` creates an eager Promise; `PostgrestBuilder` is lazy. The mismatch means tests pass for code that never fires the network request. Use a lazy builder mock (one that only resolves when `.then()` is called) when testing fire-and-forget Supabase calls.
 
-- When a feature interacts with Realtime (INSERT-only), note explicitly that `read_at`/`updated_at` fields on incoming payloads will always be `null` — in-memory state is the only option for tracking session-local read status.
+- **Dynamic Next.js layouts re-render on every navigation.** Any array/object prop passed from a dynamic server layout will be a new reference on each route change. Never put such a prop directly in a `useEffect` dependency array if re-running the effect on every navigation is undesirable. Use a `ref` to hold the latest value instead.
+
+- **Before writing the retro, verify the fix holds across all reported symptoms** — refresh AND switch-conversations. Writing the retro after only verifying one symptom left a second root cause undiscovered for another session.
 
 ## Action Items
 
 | Item | Status |
 |---|---|
-| Fix issue #12 (P2): username change breaks ConversationList links for other online users | Pending |
+| Fix issue #12 (P2): profiles table missing from realtime publication | ✅ Done (migration 008, PR #15) |
+| Fix issue #13 refresh case: `mark_messages_read` RPC not firing | ✅ Done (`.then()` fix, PR #15) |
+| Fix issue #13 switch-conversations case: `profiles` in `load()` dep array | ✅ Done (profilesRef pattern, PR #15) |
 | Replace plain `<img>` tags with `next/image` in ChatHeader, ConversationItem, UserCard | Pending |
