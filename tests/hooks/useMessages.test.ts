@@ -5,6 +5,21 @@ import type { Message } from '@/types'
 
 let insertCallback: ((payload: { new: Message }) => void) | null = null
 
+// Simulates PostgrestBuilder's lazy fetch — the HTTP request only fires when
+// .then() is called. Without this, tests would pass even if .then() is missing
+// in the source, masking the "RPC called but no HTTP request sent" bug.
+function makeLazyBuilder(thenSpy: ReturnType<typeof vi.fn>) {
+  return {
+    then(onfulfilled?: (v: unknown) => unknown) {
+      thenSpy()
+      return Promise.resolve({ data: null, error: null }).then(onfulfilled)
+    },
+  }
+}
+
+const mockRpcThen = vi.fn()
+const mockRpc = vi.fn()
+
 const mockChannel = {
   on: vi.fn((_event: string, _opts: unknown, cb: (payload: { new: Message }) => void) => {
     insertCallback = cb
@@ -18,7 +33,7 @@ vi.mock('@/lib/supabase/client', () => ({
   createClient: vi.fn(() => ({
     channel: vi.fn(() => mockChannel),
     realtime: { _remove: vi.fn() },
-    rpc: vi.fn().mockResolvedValue({ error: null }),
+    rpc: mockRpc,
   })),
 }))
 
@@ -44,6 +59,8 @@ describe('useMessages', () => {
   beforeEach(() => {
     insertCallback = null
     vi.clearAllMocks()
+    mockRpcThen.mockReset()
+    mockRpc.mockReturnValue(makeLazyBuilder(mockRpcThen))
     mockChannel.on.mockImplementation(
       (_event: string, _opts: unknown, cb: (payload: { new: Message }) => void) => {
         insertCallback = cb
@@ -70,6 +87,49 @@ describe('useMessages', () => {
     })
     expect(result.current).toHaveLength(2)
     expect(result.current[1].id).toBe('msg-2')
+  })
+
+  it('calls mark_messages_read (fires HTTP request) on mount', () => {
+    renderHook(() => useMessages([msg1], 'user-a', 'user-b'))
+    expect(mockRpc).toHaveBeenCalledWith('mark_messages_read', {
+      p_sender_id: 'user-b',
+      p_receiver_id: 'user-a',
+    })
+    // Verify the fetch actually fired — PostgrestBuilder only sends the HTTP
+    // request when .then() is consumed. If this fails, the RPC is a no-op.
+    expect(mockRpcThen).toHaveBeenCalled()
+  })
+
+  it('calls mark_messages_read (fires HTTP request) when a message arrives from the other user', () => {
+    renderHook(() => useMessages([msg1], 'user-a', 'user-b'))
+    // Reset after mount call so we can assert the realtime-triggered call separately.
+    mockRpcThen.mockReset()
+    mockRpc.mockReturnValue(makeLazyBuilder(mockRpcThen))
+
+    act(() => {
+      insertCallback?.({ new: msg2 }) // msg2 is from user-b → other user
+    })
+    expect(mockRpc).toHaveBeenCalledWith('mark_messages_read', {
+      p_sender_id: 'user-b',
+      p_receiver_id: 'user-a',
+    })
+    expect(mockRpcThen).toHaveBeenCalled()
+  })
+
+  it('does not call mark_messages_read when current user sends a message', () => {
+    renderHook(() => useMessages([msg1], 'user-a', 'user-b'))
+    mockRpc.mockClear()
+
+    const outgoing: Message = {
+      ...msg1,
+      id: 'msg-3',
+      sender_id: 'user-a',
+      receiver_id: 'user-b',
+    }
+    act(() => {
+      insertCallback?.({ new: outgoing })
+    })
+    expect(mockRpc).not.toHaveBeenCalled()
   })
 
   it('ignores messages not belonging to this conversation', () => {

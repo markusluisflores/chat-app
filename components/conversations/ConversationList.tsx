@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { usePathname } from 'next/navigation'
-import type { RealtimePostgresInsertPayload } from '@supabase/supabase-js'
+import type { RealtimePostgresInsertPayload, RealtimePostgresUpdatePayload } from '@supabase/supabase-js'
 import type { Profile, Message } from '@/types'
 import { ConversationItem } from './ConversationItem'
 import { usePresence } from '@/hooks/usePresence'
@@ -30,19 +30,21 @@ export function ConversationList({ currentUserId, profiles }: Props) {
   const pathname = usePathname()
   const { isOnline } = usePresence()
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
-  // Maps otherId -> created_at of the last message the user saw when they opened the conversation.
-  // A conversation is "read" if its current lastMessage.created_at <= this timestamp.
-  // When a newer message arrives, the comparison fails and bold returns.
-  const [readTimestamps, setReadTimestamps] = useState<Map<string, string>>(new Map())
-  // Ref so handleInsert can check the active conversation without adding pathname
-  // to its dependency array (which would teardown/resubscribe on every navigation).
+  // Set of profile IDs whose conversations have been read this session.
+  // Initialized from read_at on load; updated as user opens/receives messages.
+  const [readConversations, setReadConversations] = useState<Set<string>>(new Set())
+  const profilesRef = useRef(profiles)
   const activeUsernameRef = useRef<string | null>(null)
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   useEffect(() => {
     const match = pathname.match(/^\/chat\/([^/]+)$/)
     activeUsernameRef.current = match ? match[1] : null
   }, [pathname])
+
+  useEffect(() => {
+    profilesRef.current = profiles
+  }, [profiles])
 
   useEffect(() => {
     async function load() {
@@ -61,23 +63,36 @@ export function ConversationList({ currentUserId, profiles }: Props) {
       }
 
       const summaries: ConversationSummary[] = []
-      for (const profile of profiles) {
+      for (const profile of profilesRef.current) {
         const lastMessage = lastByUser.get(profile.id)
         if (lastMessage) summaries.push({ profile, lastMessage })
       }
 
       setConversations(sortByRecency(summaries))
+
+      // A conversation starts as read if current user sent the last message,
+      // or if the DB shows it was already marked read.
+      const initialRead = new Set<string>()
+      for (const { profile, lastMessage } of summaries) {
+        if (lastMessage.sender_id === currentUserId || lastMessage.read_at !== null) {
+          initialRead.add(profile.id)
+        }
+      }
+      setReadConversations(initialRead)
     }
 
     load()
-  }, [currentUserId, profiles])
+    // profiles intentionally omitted: profilesRef.current is used inside so load() only
+    // runs on mount, preventing readConversations from being reset on every navigation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUserId, supabase])
 
   const handleInsert = useCallback(
     (payload: RealtimePostgresInsertPayload<Message>) => {
       const msg = payload.new
       const otherId =
         msg.sender_id === currentUserId ? msg.receiver_id : msg.sender_id
-      const profile = profiles.find((p) => p.id === otherId)
+      const profile = profilesRef.current.find((p) => p.id === otherId)
       if (!profile) return
 
       setConversations((prev) => {
@@ -85,14 +100,43 @@ export function ConversationList({ currentUserId, profiles }: Props) {
         return [{ profile, lastMessage: msg }, ...without]
       })
 
-      // If the message arrived while the user is actively viewing this conversation,
-      // advance the read timestamp so navigating away doesn't re-bold it.
-      if (activeUsernameRef.current === profile.username) {
-        setReadTimestamps((prev) => new Map([...prev, [otherId, msg.created_at]]))
+      // Mark as unread only if the other person sent it and we're not in their conversation.
+      if (msg.sender_id === otherId && activeUsernameRef.current !== profile.username) {
+        setReadConversations((prev) => {
+          const next = new Set(prev)
+          next.delete(otherId)
+          return next
+        })
       }
     },
-    [currentUserId, profiles]
+    [currentUserId]
   )
+
+  useEffect(() => {
+    const profilesChannel = supabase
+      .channel(`profiles-${currentUserId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles' },
+        (payload: RealtimePostgresUpdatePayload<Pick<Profile, 'id' | 'display_name' | 'avatar_url' | 'username'>>) => {
+          const updated = payload.new
+          profilesRef.current = profilesRef.current.map((p) =>
+            p.id === updated.id ? { ...p, ...updated } : p
+          )
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.profile.id === updated.id ? { ...c, profile: { ...c.profile, ...updated } } : c
+            )
+          )
+        }
+      )
+      .subscribe()
+
+    return () => {
+      profilesChannel.teardown()
+      ;(supabase.realtime as unknown as { _remove: (ch: typeof profilesChannel) => void })._remove(profilesChannel)
+    }
+  }, [currentUserId, supabase])
 
   useEffect(() => {
     const sentChannel = supabase
@@ -121,7 +165,7 @@ export function ConversationList({ currentUserId, profiles }: Props) {
       rcvdChannel.teardown()
       ;(supabase.realtime as unknown as { _remove: (ch: typeof rcvdChannel) => void })._remove(rcvdChannel)
     }
-  }, [currentUserId, handleInsert])
+  }, [currentUserId, handleInsert, supabase])
 
   return (
     <aside className="w-[300px] flex-shrink-0 flex flex-col border-r border-gray-100">
@@ -130,8 +174,9 @@ export function ConversationList({ currentUserId, profiles }: Props) {
       </div>
       <div className="flex-1 overflow-y-auto">
         {conversations.map(({ profile, lastMessage }) => {
-          const lastSeenAt = readTimestamps.get(profile.id)
-          const isRead = lastSeenAt !== undefined && lastSeenAt >= lastMessage.created_at
+          const isRead =
+            lastMessage.sender_id === currentUserId ||
+            readConversations.has(profile.id)
           return (
             <ConversationItem
               key={profile.id}
@@ -140,9 +185,8 @@ export function ConversationList({ currentUserId, profiles }: Props) {
               isOnline={isOnline(profile.id)}
               isActive={pathname === `/chat/${profile.username}`}
               isRead={isRead}
-              currentUserId={currentUserId}
               onOpen={() =>
-                setReadTimestamps((prev) => new Map([...prev, [profile.id, lastMessage.created_at]]))
+                setReadConversations((prev) => new Set([...prev, profile.id]))
               }
             />
           )
