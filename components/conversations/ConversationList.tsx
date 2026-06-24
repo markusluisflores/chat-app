@@ -63,7 +63,7 @@ export function ConversationList({ currentUserId, profiles }: Props) {
       }
 
       const summaries: ConversationSummary[] = []
-      for (const profile of profiles) {
+      for (const profile of profilesRef.current) {
         const lastMessage = lastByUser.get(profile.id)
         if (lastMessage) summaries.push({ profile, lastMessage })
       }
@@ -82,7 +82,10 @@ export function ConversationList({ currentUserId, profiles }: Props) {
     }
 
     load()
-  }, [currentUserId, profiles, supabase])
+    // profiles intentionally omitted: profilesRef.current is used inside so load() only
+    // runs on mount, preventing readConversations from being reset on every navigation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUserId, supabase])
 
   const handleInsert = useCallback(
     (payload: RealtimePostgresInsertPayload<Message>) => {
