@@ -7,6 +7,18 @@ async function loginAsUserA(page: Page) {
   await page.fill('#password', USER_A.password)
   await page.click('button[type="submit"]')
   await page.waitForURL(/\/chat/)
+  // Wait for the post-login network activity (router.refresh, session cookie
+  // persistence) to complete before the test body triggers a hard reload.
+  await page.waitForLoadState('networkidle')
+
+  // Diagnostic: surface cookie state in CI logs so failures are interpretable.
+  const cookies = await page.context().cookies()
+  const authCookies = cookies.filter((c) => c.name.includes('sb-'))
+  if (authCookies.length === 0) {
+    console.warn('[loginAsUserA] No sb-* cookies found after login. All cookies:', cookies.map((c) => c.name))
+  } else {
+    console.log('[loginAsUserA] Auth cookies:', authCookies.map((c) => `${c.name} (domain=${c.domain} secure=${c.secure})`))
+  }
 }
 
 /** Selects the message preview <p> inside the USER_B conversation link. */
