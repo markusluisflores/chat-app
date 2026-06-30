@@ -69,6 +69,19 @@ Two tables: `profiles` (one row per auth user, auto-created by trigger on `auth.
 
 Migrations live in `supabase/migrations/` (001–005) and have been applied to the remote project.
 
+### Environments
+
+| Environment | Railway | Supabase Project | Purpose |
+|---|---|---|---|
+| Production | main service | `chat-app-production` | Real users; deployed on merge to main |
+| Staging | PR preview (auto) | `chat-app-staging` | CI, Playwright E2E, PR previews |
+
+Playwright test users (`playwright-test-a@mailinator.com`, `playwright-test-b@mailinator.com`) live in the staging Supabase project only — never in production.
+
+**Migration rule:** Never apply migrations to production manually. All migrations go through CI (`migrate.yml` → staging on PR, production on merge to main).
+
+**Railway preview URL format:** `<service>-<branch>-<project>.up.railway.app`. Available in GitHub Actions as `github.event.deployment_status.target_url`.
+
 ### Environment
 
 `.env.local` (not in git) requires:

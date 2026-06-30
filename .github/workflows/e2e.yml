@@ -1,0 +1,45 @@
+name: E2E
+
+on:
+  deployment_status: {}
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Playwright smoke tests
+    if: >-
+      github.event.deployment_status.state == 'success' &&
+      !contains(github.event.deployment_status.environment, 'production')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+      - name: Resolve BASE_URL
+        id: url
+        run: |
+          FULL_ENV="${{ github.event.deployment_status.environment }}"
+          ENV_NAME="${FULL_ENV##* / }"
+          BASE_URL="https://chat-app-${ENV_NAME}.up.railway.app"
+          echo "environment: $FULL_ENV"
+          echo "env_name:    $ENV_NAME"
+          echo "base_url:    $BASE_URL"
+          echo "base_url=$BASE_URL" >> "$GITHUB_OUTPUT"
+      - run: npm ci
+      - run: npx playwright install chromium --with-deps
+      - run: npx playwright test
+        env:
+          BASE_URL: ${{ steps.url.outputs.base_url }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: test-results/
+          retention-days: 3
