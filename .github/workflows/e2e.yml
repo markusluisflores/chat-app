@@ -19,10 +19,25 @@ jobs:
         with:
           node-version: 'lts/*'
           cache: 'npm'
+      - name: Debug deployment event
+        run: |
+          echo "=== Deployment status fields ==="
+          echo "state:            ${{ github.event.deployment_status.state }}"
+          echo "environment:      ${{ github.event.deployment_status.environment }}"
+          echo "target_url:       ${{ github.event.deployment_status.target_url }}"
+          echo "environment_url:  ${{ github.event.deployment_status.environment_url }}"
+          echo "=== Deployment fields ==="
+          echo "deployment.environment: ${{ github.event.deployment.environment }}"
+          echo "deployment.payload:     ${{ toJson(github.event.deployment.payload) }}"
+          echo "=== Computed BASE_URL ==="
+          echo "BASE_URL: https://chat-app-${{ github.event.deployment_status.environment }}.up.railway.app"
+          echo "=== Secrets presence ==="
+          echo "STAGING_SUPABASE_URL set:      ${{ secrets.STAGING_SUPABASE_URL != '' }}"
+          echo "STAGING_SUPABASE_ANON_KEY set: ${{ secrets.STAGING_SUPABASE_ANON_KEY != '' }}"
       - run: npm ci
       - run: npx playwright install chromium --with-deps
       - run: npx playwright test
         env:
-          BASE_URL: ${{ github.event.deployment_status.environment_url }}
+          BASE_URL: https://chat-app-${{ github.event.deployment_status.environment }}.up.railway.app
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
