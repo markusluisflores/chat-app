@@ -1,7 +1,7 @@
 # Chat App — Project Reviewer & Interview Guide
 
 > **Living document.** Updated as new concepts are added or lessons are learned.
-> Last updated: 2026-06-24
+> Last updated: 2026-06-30
 
 ---
 
@@ -148,7 +148,34 @@ Merge to main
 
 ---
 
-### 9. Migration History Repair
+### 9. Database Migrations — What They Are and What Ours Do
+
+**Simple version:** A migration is a numbered instruction card for your database. Card 001 says "create the users table." Card 002 says "create the messages table." They always run in order, and the Supabase CLI keeps a log of which cards have already been applied — so running the same migration twice is safe, it just checks the log and skips the ones already done.
+
+**Think of it this way:** Your database structure is like a filing cabinet. Migrations are the written instructions for building it — add this drawer, add this folder, add this label. If you hand a fresh cabinet and the full stack of cards to any machine (local, staging, production, a teammate's laptop), it ends up with the exact same cabinet. That's the point.
+
+**The tracking table:** Supabase stores applied migration names in a `supabase_migrations` table in your database. When you run `supabase db push`, it compares the files in `supabase/migrations/` against that table and only runs the ones that aren't already recorded.
+
+**What each migration in this project does:**
+
+| File | What it does |
+|---|---|
+| `001_create_profiles.sql` | Creates the `profiles` table — one row per auth user (display name, avatar URL) |
+| `002_create_messages.sql` | Creates the `messages` table — the chat messages themselves (sender, receiver, content, timestamps) |
+| `003_rls_policies.sql` | Turns on Row Level Security and adds the rules: you can only read messages you sent or received; you can only insert where you're the sender |
+| `004_profile_trigger.sql` | Adds a PostgreSQL trigger that auto-creates a profile row the moment a new user signs up — app code never has to do it manually |
+| `005_mark_messages_read_rpc.sql` | Creates the `mark_messages_read` security-definer function — the only way a receiver can update `read_at` without being able to touch message content (see RLS section) |
+| `006_mark_messages_read_auth_guard.sql` | Adds an auth check to that function so anonymous callers can't invoke it |
+| `007_add_username_to_profiles.sql` | Adds the `username` column and a trigger that auto-generates it from the email address (e.g. `alice@example.com` → `alice`) |
+| `008_profiles_realtime.sql` | Adds `profiles` to the Supabase Realtime publication so live updates on profile changes broadcast to subscribed clients |
+
+**Why both staging and production run all 8:** The CI pipeline runs `supabase db push` against staging on every PR, then against production on merge to main. Same migration files, two separate Postgres databases — both always in sync with the code. If a migration is broken, it fails in staging before it can touch production.
+
+**Interview talking point:** "Every database change is a versioned, numbered migration file. Nothing is done through the dashboard — because a dashboard change only applies to one environment and leaves no record. Migrations mean any environment can be reconstructed from scratch by running the files in order."
+
+---
+
+### 10. Migration History Repair
 
 **Simple version:** A "migration" is a recorded change to your database structure — things like "add a users table" or "add a username column." The Supabase CLI keeps a log of every migration it has applied. If you made database changes through the Supabase website (dashboard) instead of through the CLI, the CLI's log is blank — it thinks nothing has been done, and it will try to run everything again from scratch.
 
@@ -158,7 +185,7 @@ Merge to main
 
 ---
 
-### 10. PresenceContext Singleton
+### 11. PresenceContext Singleton
 
 **Simple version:** In the browser, there's only one Supabase client. When you open a channel by name, Supabase remembers it. If three different components all try to open the same channel and subscribe to it, Supabase sees it as one channel being subscribed to three times — which it rejects after the first time with an error.
 
