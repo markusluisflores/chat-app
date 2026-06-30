@@ -23,7 +23,6 @@ jobs:
         id: url
         run: |
           FULL_ENV="${{ github.event.deployment_status.environment }}"
-          # Railway sets environment as "<project> / <env-name>" — extract the part after " / "
           ENV_NAME="${FULL_ENV##* / }"
           BASE_URL="https://chat-app-${ENV_NAME}.up.railway.app"
           echo "environment: $FULL_ENV"
@@ -37,3 +36,10 @@ jobs:
           BASE_URL: ${{ steps.url.outputs.base_url }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: test-results/
+          retention-days: 3
