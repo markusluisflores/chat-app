@@ -11,7 +11,7 @@ jobs:
     name: Playwright smoke tests
     if: >-
       github.event.deployment_status.state == 'success' &&
-      github.event.deployment_status.environment != 'production'
+      !contains(github.event.deployment_status.environment, 'production')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,25 +19,21 @@ jobs:
         with:
           node-version: 'lts/*'
           cache: 'npm'
-      - name: Debug deployment event
+      - name: Resolve BASE_URL
+        id: url
         run: |
-          echo "=== Deployment status fields ==="
-          echo "state:            ${{ github.event.deployment_status.state }}"
-          echo "environment:      ${{ github.event.deployment_status.environment }}"
-          echo "target_url:       ${{ github.event.deployment_status.target_url }}"
-          echo "environment_url:  ${{ github.event.deployment_status.environment_url }}"
-          echo "=== Deployment fields ==="
-          echo "deployment.environment: ${{ github.event.deployment.environment }}"
-          echo "deployment.payload:     ${{ toJson(github.event.deployment.payload) }}"
-          echo "=== Computed BASE_URL ==="
-          echo "BASE_URL: https://chat-app-${{ github.event.deployment_status.environment }}.up.railway.app"
-          echo "=== Secrets presence ==="
-          echo "STAGING_SUPABASE_URL set:      ${{ secrets.STAGING_SUPABASE_URL != '' }}"
-          echo "STAGING_SUPABASE_ANON_KEY set: ${{ secrets.STAGING_SUPABASE_ANON_KEY != '' }}"
+          FULL_ENV="${{ github.event.deployment_status.environment }}"
+          # Railway sets environment as "<project> / <env-name>" — extract the part after " / "
+          ENV_NAME="${FULL_ENV##* / }"
+          BASE_URL="https://chat-app-${ENV_NAME}.up.railway.app"
+          echo "environment: $FULL_ENV"
+          echo "env_name:    $ENV_NAME"
+          echo "base_url:    $BASE_URL"
+          echo "base_url=$BASE_URL" >> "$GITHUB_OUTPUT"
       - run: npm ci
       - run: npx playwright install chromium --with-deps
       - run: npx playwright test
         env:
-          BASE_URL: https://chat-app-${{ github.event.deployment_status.environment }}.up.railway.app
+          BASE_URL: ${{ steps.url.outputs.base_url }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
