@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import Link from 'next/link'
 import type { Profile } from '@/types'
 
@@ -12,9 +13,11 @@ export function UserCard({ profile, isOnline }: Props) {
       <div className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 cursor-pointer rounded-lg mx-1">
         <div className="relative flex-shrink-0">
           {profile.avatar_url ? (
-            <img
+            <Image
               src={profile.avatar_url}
               alt={profile.display_name}
+              width={28}
+              height={28}
               className="w-7 h-7 rounded-full object-cover"
             />
           ) : (

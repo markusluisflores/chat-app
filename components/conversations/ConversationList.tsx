@@ -84,7 +84,6 @@ export function ConversationList({ currentUserId, profiles }: Props) {
     load()
     // profiles intentionally omitted: profilesRef.current is used inside so load() only
     // runs on mount, preventing readConversations from being reset on every navigation.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUserId, supabase])
 
   const handleInsert = useCallback(
