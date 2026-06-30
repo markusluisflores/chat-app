@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import type { Profile } from '@/types'
 
 type Props = {
@@ -10,9 +11,11 @@ export function ChatHeader({ user, isOnline }: Props) {
     <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100">
       <div className="relative">
         {user.avatar_url ? (
-          <img
+          <Image
             src={user.avatar_url}
             alt={user.display_name}
+            width={40}
+            height={40}
             className="w-10 h-10 rounded-full object-cover"
           />
         ) : (

@@ -67,7 +67,7 @@ channel.teardown()
 
 Two tables: `profiles` (one row per auth user, auto-created by trigger on `auth.users`) and `messages`. RLS is enabled on both. Key policies: only participants can read messages; only senders can insert (enforced by `auth.uid() = sender_id`). `mark_messages_read(p_sender_id, p_receiver_id)` is a security-definer RPC used by the receiver to mark messages read without violating the sender-only UPDATE policy. See [ADR-004](docs/adr/ADR-004-mark-messages-read-rpc.md).
 
-Migrations live in `supabase/migrations/` (001–005) and have been applied to the remote project.
+Migrations live in `supabase/migrations/` (001–008) and have been applied to the remote project.
 
 ### Environments
 
@@ -80,7 +80,9 @@ Playwright test users (`playwright-test-a@mailinator.com`, `playwright-test-b@ma
 
 **Migration rule:** Never apply migrations to production manually. All migrations go through CI (`migrate.yml` → staging on PR, production on merge to main).
 
-**Railway preview URL format:** `<service>-<branch>-<project>.up.railway.app`. Available in GitHub Actions as `github.event.deployment_status.target_url`.
+**Railway preview URL format:** `https://chat-app-{env-name}.up.railway.app`. Construct `env-name` from `github.event.deployment_status.environment` (format: `<project> / <env-name>`) by stripping the project prefix: `${FULL_ENV##* / }`. Neither `target_url` nor `environment_url` from the `deployment_status` event gives the app URL — both point to the Railway dashboard.
+
+**New PR environments inherit Railway vars from production by default.** When a new PR environment is created, manually set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to the staging values via Railway dashboard or `railway variables set --environment <env>`. Without this, the PR preview will connect to the production Supabase database.
 
 ### Environment
 

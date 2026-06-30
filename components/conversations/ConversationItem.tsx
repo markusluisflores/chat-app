@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import Link from 'next/link'
 import type { Profile, Message } from '@/types'
 import { formatTime } from '@/lib/utils'
@@ -21,9 +22,11 @@ export function ConversationItem({ user, lastMessage, isOnline, isActive, isRead
       >
         <div className="relative flex-shrink-0">
           {user.avatar_url ? (
-            <img
+            <Image
               src={user.avatar_url}
               alt={user.display_name}
+              width={40}
+              height={40}
               className="w-10 h-10 rounded-full object-cover"
             />
           ) : (
