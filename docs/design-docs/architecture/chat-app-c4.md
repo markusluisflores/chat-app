@@ -19,24 +19,26 @@
 ## C1 — System Context
 
 ```mermaid
-C4Context
-    title C1 — System Context: Chat App
+flowchart TD
+    classDef person fill:#08427b,stroke:#052e56,color:#fff
+    classDef system fill:#1168bd,stroke:#0b4884,color:#fff
+    classDef external fill:#6b6b6b,stroke:#4a4a4a,color:#fff
 
-    Person(user, "User", "Sends and receives real-time direct messages via browser")
+    User["👤 **User**\nBrowser"]:::person
 
-    System(chatApp, "Chat App", "Real-time 1:1 messaging application built with Next.js 16 / React 19 / Supabase / Railway")
+    App["**Chat App**\nNext.js 16 · React 19\nReal-time 1:1 messaging"]:::system
 
-    System_Ext(supabase, "Supabase", "Auth (JWT + PKCE), PostgreSQL, Realtime (WebSocket), Storage")
-    System_Ext(railway, "Railway", "PaaS hosting — production service and auto-created PR preview environments")
-    System_Ext(github, "GitHub / GitHub Actions", "Source control + CI/CD: test, lint-and-build, migrate, e2e workflows")
-    System_Ext(emailProvider, "Email Provider", "Sends account-confirmation emails via Supabase SMTP")
+    Supabase["**Supabase**\nAuth · PostgreSQL\nRealtime · Storage"]:::external
+    Railway["**Railway**\nPaaS hosting\nProduction + PR previews"]:::external
+    GitHub["**GitHub Actions**\nCI/CD\ntest · lint · migrate · e2e"]:::external
+    Email["**Email Provider**\nAccount confirmation\nvia Supabase SMTP"]:::external
 
-    Rel(user, chatApp, "Uses", "HTTPS")
-    Rel(chatApp, supabase, "Auth, DB reads/writes, Realtime subscriptions", "HTTPS / WSS")
-    Rel(github, railway, "Triggers deployments on PR open and merge to main", "Railway API")
-    Rel(github, supabase, "Applies DB migrations (migrate.yml)", "Supabase CLI / HTTPS")
-    Rel(github, chatApp, "Playwright E2E smoke tests against Railway preview URL", "HTTPS")
-    Rel(supabase, emailProvider, "Sends confirmation email on register", "SMTP")
+    User -->|"HTTPS"| App
+    App -->|"HTTPS / WSS"| Supabase
+    GitHub -->|"Railway API — triggers deployments"| Railway
+    GitHub -->|"Supabase CLI — applies migrations"| Supabase
+    GitHub -->|"HTTPS — Playwright E2E tests"| App
+    Supabase -->|"SMTP"| Email
 ```
 
 ---
@@ -44,31 +46,33 @@ C4Context
 ## C2 — Container Diagram
 
 ```mermaid
-C4Container
-    title C2 — Container Diagram: Chat App
+flowchart TD
+    classDef person fill:#08427b,stroke:#052e56,color:#fff
+    classDef container fill:#1168bd,stroke:#0b4884,color:#fff
+    classDef external fill:#6b6b6b,stroke:#4a4a4a,color:#fff
 
-    Person(user, "User", "Browser")
+    User["👤 **User**\nBrowser"]:::person
 
-    System_Boundary(chatAppBoundary, "Chat App") {
-        Container(nextServer, "Next.js Server", "Next.js 16 App Router", "Server Components, Route Handlers, auth-guarded layout, SSR session seeding via initialSession prop")
-        Container(reactClient, "React Client Bundle", "React 19, Tailwind v4", "Client Components: ChatPanel, ConversationList, NavSidebar, PresenceContext — realtime subscriptions live here")
-        Container(proxy, "proxy.ts", "Next.js 16 proxy (renamed from middleware)", "Refreshes Supabase session token on every request; does not enforce auth — auth guard is in app/(chat)/layout.tsx")
-    }
+    subgraph ChatApp["Chat App"]
+        NextServer["**Next.js Server**\nNext.js 16 App Router\nServer Components · Route Handlers\nauth-guarded layout · SSR session seeding"]:::container
+        ReactClient["**React Client Bundle**\nReact 19 · Tailwind v4\nChatPanel · ConversationList\nNavSidebar · PresenceContext"]:::container
+        Proxy["**proxy.ts**\nNext.js 16 proxy\nRefreshes session token per request\n(auth guard is in layout.tsx, not here)"]:::container
+    end
 
-    System_Boundary(supabaseBoundary, "Supabase") {
-        Container(supabaseAuth, "Auth Service", "Supabase Auth", "JWT issuance, PKCE email-confirmation flow, session refresh. Server client in lib/supabase/server.ts; browser client in lib/supabase/client.ts")
-        Container(postgres, "PostgreSQL", "Supabase Postgres + PostgREST", "profiles + messages tables with RLS. mark_messages_read() security-definer RPC lets receivers write read_at without violating sender-only UPDATE policy")
-        Container(realtime, "Realtime Service", "Supabase Realtime", "presence:online WebSocket channel (PresenceContext singleton); postgres_changes INSERT subscriptions on messages (useMessages, ConversationList)")
-    }
+    subgraph SupabaseBoundary["Supabase"]
+        Auth["**Auth Service**\nJWT · PKCE email confirmation\nSession refresh\nServer client · browser client"]:::external
+        Postgres["**PostgreSQL**\nPostgres + PostgREST\nprofiles + messages · RLS\nmark_messages_read() RPC"]:::external
+        Realtime["**Realtime Service**\npresence:online channel (WSS)\npostgres_changes INSERT\non messages table"]:::external
+    end
 
-    Rel(user, nextServer, "Requests pages", "HTTPS")
-    Rel(user, reactClient, "Interacts with UI after hydration", "Browser events")
-    Rel(proxy, supabaseAuth, "Refreshes session cookie on every request", "HTTPS")
-    Rel(nextServer, supabaseAuth, "Validates session server-side (createServerClient)", "HTTPS")
-    Rel(nextServer, postgres, "Fetches all profiles for layout SSR", "HTTPS")
-    Rel(reactClient, supabaseAuth, "Login / register (createBrowserClient singleton)", "HTTPS")
-    Rel(reactClient, postgres, "Sends messages, marks read, loads conversation history", "HTTPS")
-    Rel(reactClient, realtime, "Presence tracking + message INSERT subscriptions", "WSS")
+    User -->|"HTTPS"| NextServer
+    User -->|"Browser events"| ReactClient
+    Proxy -->|"HTTPS — refreshes cookie"| Auth
+    NextServer -->|"HTTPS — validates session"| Auth
+    NextServer -->|"HTTPS — fetches profiles for SSR"| Postgres
+    ReactClient -->|"HTTPS — login / register"| Auth
+    ReactClient -->|"HTTPS — send messages · mark read"| Postgres
+    ReactClient -->|"WSS — presence + message inserts"| Realtime
 ```
 
 ---
