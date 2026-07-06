@@ -4,19 +4,24 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && node_modules/.bin/esbuild worker/index.ts --bundle --platform=node --outfile=dist/worker.js",
     "start": "next start",
     "lint": "eslint",
     "test": "cross-env NODE_OPTIONS=--experimental-require-module vitest",
     "test:run": "cross-env NODE_OPTIONS=--experimental-require-module vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "worker": "tsx worker/index.ts",
+    "worker:dev": "tsx watch worker/index.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.107.0",
+    "bullmq": "^5.79.2",
     "next": "16.2.7",
+    "node-html-parser": "^8.0.4",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "tsx": "^4.23.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

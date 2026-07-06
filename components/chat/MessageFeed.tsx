@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import type { Message } from '@/types'
 import { MessageBubble } from './MessageBubble'
 import { useMessages } from '@/hooks/useMessages'
+import { useLinkPreviews } from '@/hooks/useLinkPreviews'
 
 type Props = {
   initialMessages: Message[]
@@ -13,6 +14,7 @@ type Props = {
 
 export function MessageFeed({ initialMessages, currentUserId, otherUserId }: Props) {
   const messages = useMessages(initialMessages, currentUserId, otherUserId)
+  const previews = useLinkPreviews(messages.map((m) => m.id))
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -26,6 +28,7 @@ export function MessageFeed({ initialMessages, currentUserId, otherUserId }: Pro
           key={message.id}
           message={message}
           isSent={message.sender_id === currentUserId}
+          preview={previews.get(message.id)}
         />
       ))}
       <div ref={bottomRef} />

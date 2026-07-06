@@ -1,7 +1,7 @@
 # Chat App — Project Reviewer & Interview Guide
 
 > **Living document.** Updated as new concepts are added or lessons are learned.
-> Last updated: 2026-06-30
+> Last updated: 2026-07-05
 
 ---
 
@@ -15,6 +15,7 @@ A real-time chat web app built to simulate how a professional team ships softwar
 - Messages appear in real-time without refreshing the page
 - Unread message bold indicator that persists across page refreshes
 - Username-based URLs (`/chat/alice`) with a settings page to change your username
+- Link preview cards — URLs in messages fetch Open Graph metadata asynchronously via a BullMQ worker and render below the message bubble
 - CI/CD pipeline: automated tests run on every pull request, including end-to-end smoke tests against a live preview environment
 
 **Tech stack:**
@@ -27,6 +28,8 @@ A real-time chat web app built to simulate how a professional team ships softwar
 | Hosting | Railway (production + PR previews) |
 | CI/CD | GitHub Actions |
 | Formatter | Prettier (auto-runs on every file save) |
+| Queue | BullMQ + Redis (Railway-native) |
+| Background worker | Node.js service on Railway (same repo, `npm run worker`) |
 
 ---
 
@@ -138,7 +141,72 @@ Merge to main
 
 ---
 
-### 8. Supabase Publication for Realtime
+### 8. Link Preview Pipeline — Async Background Queue
+
+**Simple version:** When you send a message with a URL, the app doesn't wait for the link preview to load before delivering the message. Instead, it hands the URL to a background worker — "go fetch this, I'll carry on" — and the preview appears a few seconds later when the worker finishes.
+
+**The three-part pipeline:**
+1. **Webhook** — Supabase fires an HTTP request to the Next.js app the moment a message is inserted. The app reads the URL from the message, drops a job into a Redis queue, and immediately responds.
+2. **Worker** — A separate Node.js process (running as its own Railway service) picks the job from the queue, fetches the URL's HTML, parses the Open Graph metadata (`og:title`, `og:description`, `og:image`), and writes it to a `message_metadata` table.
+3. **Realtime** — The client is subscribed to `message_metadata` inserts. When the worker writes the row, Supabase pushes it to the browser, and the preview card renders.
+
+**Why the message is never delayed:** the message is inserted into Supabase directly by the client. It's already delivered before the webhook even fires. The preview is purely additive — if it fails, the message is unaffected.
+
+**Interview talking point:** "The link preview is an async side-effect of sending a message, not part of the send path. Decoupling the two via a job queue means the message is never held waiting for an external HTTP fetch. The preview appears when it's ready — or not at all, gracefully."
+
+---
+
+### 9. BullMQ Job Queue — States, Retries, and Idempotency
+
+**Simple version:** BullMQ is a queue library that manages jobs the way a post office manages packages — it tracks each one's status, retries delivery if something fails, and keeps a record of packages that couldn't be delivered.
+
+**Job state machine:**
+
+```
+waiting → active → completed
+              ↓ (fail, retries left)
+          waiting (exponential backoff)
+              ↓ (fail, no retries)
+           failed (dead-letter queue)
+```
+
+**Exponential backoff:** instead of retrying immediately (which hammers a failing server), each retry waits longer: 2s, then 4s. By attempt 3, a flaky URL has had time to recover.
+
+**Two-layer idempotency:** the webhook can fire twice for the same message (Supabase uses at-least-once delivery). We handle this at two layers:
+1. **BullMQ job ID** = `link-preview:${messageId}:${url}` — BullMQ rejects a second job with the same ID, so the worker never processes a duplicate
+2. **DB upsert with `onConflict: 'message_id,url'`** — if a duplicate job does reach the worker, the DB write is a safe overwrite, not a duplicate row. Without naming the correct unique constraint in `onConflict`, PostgREST falls back to conflicting on the primary key UUID — finds no match — and inserts a new row, which then hits the real unique constraint and throws.
+
+**Interview talking point:** "Idempotency is two layers: BullMQ's job ID deduplication prevents the worker from running twice, and the upsert's `onConflict` clause ensures the DB write is safe even if a duplicate gets through. The specific bug: omitting `onConflict: 'message_id,url'` makes PostgREST conflict on the PK instead of the business key — a subtle distinction that only surfaces on a retry."
+
+---
+
+### 10. SSRF — Server-Side Request Forgery
+
+**Simple version:** If your server fetches URLs that users provide, an attacker can give you an internal URL — `http://169.254.169.254/metadata` — and your server, running inside a cloud datacenter, will fetch it happily. That address is the AWS EC2/GCP metadata service, which returns cloud credentials. You've just leaked your own infrastructure.
+
+**Our guard (`isPrivateUrl`):** before fetching any URL, we check whether the hostname resolves to a private address range (RFC 1918: `10.x`, `172.16–31.x`, `192.168.x`), loopback (`127.0.0.1`, `localhost`), or cloud metadata endpoints. If so, the job throws immediately — no fetch attempted.
+
+**What it doesn't cover:** DNS rebinding — an attacker registers a public domain that briefly resolves to a public IP, passes our check, then switches to a private IP by the time we fetch. Full protection requires fetching the resolved IP and re-checking. We noted this limitation but accepted it per spec scope.
+
+**Interview talking point:** "Any server that fetches user-provided URLs is SSRF-vulnerable by default. The minimum fix is a denylist of private IP ranges and cloud metadata hostnames. The harder problem is DNS rebinding — you'd need to resolve the hostname yourself, check the IP, then fetch using that IP. We implemented the denylist and documented the DNS rebinding gap."
+
+---
+
+### 11. Worker as a Railway Service (Not a CI Process)
+
+**Simple version:** We initially ran the link preview worker as a background process inside the GitHub Actions CI job, alongside the Playwright tests. It seemed to work locally — but in CI it never processed a single job, and we couldn't figure out why at first.
+
+**Root cause:** Each Railway PR environment has its own Redis instance. The Railway app (running on Railway) connects to Railway's Redis. The CI worker (running on GitHub Actions) was connecting to a static `STAGING_REDIS_URL` secret — a completely different Redis. Jobs enqueued by Railway sat in one queue; our CI worker drained a different one entirely.
+
+**The fix:** deploy the worker as a second Railway service in the same project. Railway auto-injects `REDIS_URL` into all services in the same environment — they share the same Redis by definition. Every PR environment gets its own worker and Redis pair automatically, with no manual secret updates per PR.
+
+**The broader rule:** if a worker shares state with a deployed service, it must run in the same deployment environment — not on CI. CI is for testing the deployed system from outside, not for being part of it.
+
+**Interview talking point:** "We were running the worker in CI and wondering why it never processed jobs. The answer: Railway gives each PR environment its own Redis, but CI has a static secret pointing at a different instance. The worker and the app were never talking to the same queue. The correct architecture is to deploy the worker as a Railway service — they share Redis automatically by living in the same environment."
+
+---
+
+### 12. Supabase Publication for Realtime
 
 **Simple version:** Supabase Realtime has a whitelist of tables it broadcasts changes for. If a table isn't on the whitelist, subscriptions to it receive nothing — no error, just complete silence. We wrote a working subscription to the `profiles` table, it produced zero events, and it took a while to figure out why. The fix was one SQL line: add `profiles` to the whitelist.
 
@@ -168,8 +236,9 @@ Merge to main
 | `006_mark_messages_read_auth_guard.sql` | Adds an auth check to that function so anonymous callers can't invoke it |
 | `007_add_username_to_profiles.sql` | Adds the `username` column and a trigger that auto-generates it from the email address (e.g. `alice@example.com` → `alice`) |
 | `008_profiles_realtime.sql` | Adds `profiles` to the Supabase Realtime publication so live updates on profile changes broadcast to subscribed clients |
+| `009_message_metadata.sql` | Creates the `message_metadata` table (OG preview fields, status, unique constraint on `message_id + url`), `moddatetime` trigger, RLS SELECT policy (participants only), and adds the table to the Realtime publication |
 
-**Why both staging and production run all 8:** The CI pipeline runs `supabase db push` against staging on every PR, then against production on merge to main. Same migration files, two separate Postgres databases — both always in sync with the code. If a migration is broken, it fails in staging before it can touch production.
+**Why both staging and production run all 9:** The CI pipeline runs `supabase db push` against staging on every PR, then against production on merge to main. Same migration files, two separate Postgres databases — both always in sync with the code. If a migration is broken, it fails in staging before it can touch production.
 
 **Interview talking point:** "Every database change is a versioned, numbered migration file. Nothing is done through the dashboard — because a dashboard change only applies to one environment and leaves no record. Migrations mean any environment can be reconstructed from scratch by running the files in order."
 
@@ -325,6 +394,10 @@ The bugs that took the longest to find, and what they teach:
 | Profile username updates never arrived | `profiles` table wasn't in the `supabase_realtime` publication | Tables must be explicitly added to the publication to receive Realtime events |
 | Realtime subscription error in dev | `supabase.removeChannel()` is async — React Strict Mode's second mount starts before cleanup finishes | Use `channel.teardown() + _remove()` for synchronous cleanup |
 | Open redirect in auth callback | `next` query param passed directly to `redirect()` without validation | Always validate redirect targets: starts with `/`, not `//` |
+| Upsert silently succeeded despite DB error | `supabase.from(...).upsert(...)` returns `{ data, error }` — it never throws. Not destructuring `error` meant DB constraint failures were silently swallowed as job successes | Always destructure `{ error }` from Supabase writes and `if (error) throw error` |
+| Preview card never appeared in E2E (CI worker connected to wrong Redis) | CI worker used a static `STAGING_REDIS_URL` secret; Railway app used its own per-environment Redis. Jobs were enqueued into Railway's Redis, worker drained a different instance | Workers that share a queue with a deployed service must run in the same deployment environment, not CI |
+| `Math.random()` lint error in `useRef` | React compiler flags `Math.random()` as an impure function call during render — `useRef(...)` is evaluated at render time | Use `useId()` to generate stable unique IDs per hook instance; it's pure and React-approved |
+| Upsert idempotency broken on retry | `onConflict` not specified — PostgREST conflicted on PK UUID (no match found) and issued a plain INSERT. The real unique constraint `(message_id, url)` then threw on retry | Always name the business-key constraint in `onConflict`, not just the PK |
 
 ---
 
