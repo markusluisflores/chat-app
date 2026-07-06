@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && node_modules/.bin/esbuild worker/index.ts --bundle --platform=node --packages=external --outfile=dist/worker.js",
+    "build": "next build && node_modules/.bin/esbuild worker/index.ts --bundle --platform=node --outfile=dist/worker.js",
     "start": "next start",
     "lint": "eslint",
     "test": "cross-env NODE_OPTIONS=--experimental-require-module vitest",
