@@ -20,7 +20,8 @@
     "next": "16.2.7",
     "node-html-parser": "^8.0.4",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "tsx": "^4.23.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
@@ -38,7 +39,6 @@
     "jsdom": "^27.0.1",
     "prettier": "^3.8.4",
     "tailwindcss": "^4",
-    "tsx": "^4.23.0",
     "typescript": "^5",
     "vitest": "^4.1.8"
   }
