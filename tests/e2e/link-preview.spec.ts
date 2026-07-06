@@ -19,18 +19,26 @@ async function loginAs(page: Page, email: string, password: string) {
   await page.waitForLoadState('networkidle')
 }
 
-async function getMessageMetadata(messageId: string, maxWaitSeconds: number = 15) {
-  const authHeaders = {
-    apikey: ANON_KEY!,
-    'Content-Type': 'application/json',
-  }
+async function getAccessToken(email: string, password: string): Promise<string> {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: 'POST',
+    headers: { apikey: ANON_KEY!, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  })
+  if (!res.ok) throw new Error(`Failed to get access token: ${await res.text()}`)
+  const data = await res.json()
+  return data.access_token as string
+}
 
+async function getMessageMetadata(
+  messageId: string,
+  authHeaders: Record<string, string>,
+  maxWaitSeconds: number = 15
+) {
   for (let i = 0; i < maxWaitSeconds; i++) {
     const response = await fetch(
       `${SUPABASE_URL}/rest/v1/message_metadata?message_id=eq.${messageId}&status=eq.done&select=status,og_title`,
-      {
-        headers: authHeaders,
-      }
+      { headers: authHeaders }
     )
 
     if (response.ok) {
@@ -53,29 +61,30 @@ test.describe('Link preview pipeline', () => {
     // Login as USER_A
     await loginAs(page, USER_A.email, USER_A.password)
 
+    // Get access token for authenticated Supabase REST API calls (RLS requires bearer token)
+    const accessToken = await getAccessToken(USER_A.email, USER_A.password)
+    const authHeaders = {
+      apikey: ANON_KEY!,
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    }
+
     // Navigate to chat with USER_B
     await page.goto(`/chat/${USER_B.username}`)
     await page.waitForLoadState('networkidle')
 
     // Send a message containing a URL with known OG tags
     const urlMessage = `Check this out https://github.com ${Date.now()}`
-    await page.fill('textarea', urlMessage)
-    await page.press('textarea', 'Enter')
+    await page.fill('input[placeholder="Write a message..."]', urlMessage)
+    await page.press('input[placeholder="Write a message..."]', 'Enter')
 
     // Wait for the message to appear in the UI
     await expect(page.locator(`text=${urlMessage}`)).toBeVisible({ timeout: 5000 })
 
     // Find the message in Supabase
-    const authHeaders = {
-      apikey: ANON_KEY!,
-      'Content-Type': 'application/json',
-    }
-
     const messagesResponse = await fetch(
       `${SUPABASE_URL}/rest/v1/messages?content=ilike.%github.com%&order=created_at.desc&limit=1`,
-      {
-        headers: authHeaders,
-      }
+      { headers: authHeaders }
     )
 
     expect(messagesResponse.ok).toBeTruthy()
@@ -86,7 +95,7 @@ test.describe('Link preview pipeline', () => {
     expect(messageId).toBeTruthy()
 
     // Poll message_metadata until status = done (max 15s)
-    const meta = await getMessageMetadata(messageId)
+    const meta = await getMessageMetadata(messageId, authHeaders)
 
     expect(meta).not.toBeNull()
     expect(meta).toHaveProperty('status', 'done')
