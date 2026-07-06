@@ -254,7 +254,7 @@ Mount at `/admin/queues` in the Next.js app behind an auth check. Provides a liv
 
 ### CI
 
-Add worker startup as a background process in the E2E workflow step alongside the existing Next.js app startup.
+The worker runs as a persistent Railway service in the same environment as the Next.js app. No CI startup step is needed — the worker is always running and shares the same auto-injected `REDIS_URL` as the web service. Every PR environment gets its own worker instance automatically when the service is added to the project.
 
 ### TDD approach
 
