@@ -48,7 +48,7 @@ describe('POST /api/webhooks/message-insert', () => {
       'fetch',
       { messageId: 'msg-1', url: 'https://github.com' },
       expect.objectContaining({
-        jobId: 'link-preview:msg-1:https://github.com',
+        jobId: 'link-preview_msg-1_https_//github.com',
         attempts: 3,
       })
     )
