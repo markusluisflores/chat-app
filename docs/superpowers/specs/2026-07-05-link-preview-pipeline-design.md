@@ -18,24 +18,23 @@ An async link preview pipeline. When a message containing a URL is inserted, a b
 
 ## System Flow
 
-```
-[Client]                [Next.js]              [Railway]           [Supabase]
-   │                       │                       │                    │
-   │── send message ──────▶│                       │                    │
-   │                       │── INSERT messages ───────────────────────▶│
-   │                       │                       │                    │── DB Webhook fires
-   │◀── Realtime msg ───────────────────────────────────────────────────│
-   │                       │◀── POST /api/webhooks/message-insert ──────│
-   │                       │── detect URLs         │                    │
-   │                       │── enqueue job ───────▶│ BullMQ/Redis       │
-   │                       │                       │                    │
-   │                       │                  [Worker process]          │
-   │                       │                  dequeue job               │
-   │                       │                  fetch URL (OG tags)       │
-   │                       │                  ──── upsert message_metadata ──▶│
-   │                       │                       │                    │── Realtime fires
-   │◀── Realtime metadata ──────────────────────────────────────────────│
-   │render preview card    │                       │                    │
+```mermaid
+sequenceDiagram
+    participant Client
+    participant NextJS as Next.js
+    participant Supabase
+    participant Redis as BullMQ/Redis
+    participant Worker
+
+    Client->>Supabase: INSERT messages
+    Supabase-->>Client: Realtime (message delivered)
+    Supabase->>NextJS: DB Webhook POST /api/webhooks/message-insert
+    NextJS->>Redis: enqueue job (link-preview:msgId:url)
+    Worker->>Redis: dequeue job
+    Worker->>Worker: fetch OG metadata (5s timeout)
+    Worker->>Supabase: upsert message_metadata
+    Supabase-->>Client: Realtime (preview data arrives)
+    Note over Client: renders preview card
 ```
 
 **Key invariant:** the message is complete on its own. If the worker fails or the URL has no OG metadata, the message still delivers and the preview simply never appears. This is intentional graceful degradation — the preview is additive, never load-bearing.
@@ -136,6 +135,19 @@ const worker = new Worker('link-preview', async (job) => {
     status: 'done',
   })
 }, { connection: redisConnection, concurrency: 5 })
+```
+
+### Job state machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> waiting: job enqueued
+    waiting --> active: worker dequeues
+    active --> completed: fetch succeeds
+    active --> waiting: fetch fails, attempts remaining (exponential backoff)
+    active --> failed: fetch fails, attempts exhausted
+    completed --> [*]
+    failed --> [*]: lands in DLQ
 ```
 
 ### Retry policy
