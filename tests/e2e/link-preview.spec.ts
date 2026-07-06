@@ -84,7 +84,7 @@ test.describe('Link preview pipeline', () => {
 
     // Find the message in Supabase
     const messagesResponse = await fetch(
-      `${SUPABASE_URL}/rest/v1/messages?content=ilike.%github.com%&order=created_at.desc&limit=1`,
+      `${SUPABASE_URL}/rest/v1/messages?content=ilike.%25github.com%25&order=created_at.desc&limit=1`,
       { headers: authHeaders }
     )
 
