@@ -22,18 +22,17 @@ export function useLinkPreviews(messageIds: string[]): Map<string, OgMetadata> {
       .eq('status', 'done')
       .then(({ data }) => {
         if (!data) return
-        setPreviews(
-          new Map(
-            data.map((row) => [
-              row.message_id,
-              {
-                og_title: row.og_title,
-                og_description: row.og_description,
-                og_image_url: row.og_image_url,
-              },
-            ])
-          )
-        )
+        setPreviews((prev) => {
+          const next = new Map(prev)
+          data.forEach((row) => {
+            next.set(row.message_id, {
+              og_title: row.og_title,
+              og_description: row.og_description,
+              og_image_url: row.og_image_url,
+            })
+          })
+          return next
+        })
       })
 
     // Subscribe to worker writes as they arrive

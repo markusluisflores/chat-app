@@ -66,6 +66,12 @@ describe('fetchOgMetadata', () => {
     const { fetchOgMetadata } = await getProcessor()
     await expect(fetchOgMetadata('https://slow.example.com')).rejects.toThrow()
   })
+
+  it('throws for private/loopback URLs', async () => {
+    const { fetchOgMetadata } = await getProcessor()
+    await expect(fetchOgMetadata('http://localhost/secret')).rejects.toThrow('Blocked')
+    await expect(fetchOgMetadata('http://169.254.169.254/metadata')).rejects.toThrow('Blocked')
+  })
 })
 
 describe('processLinkPreview', () => {
@@ -97,7 +103,8 @@ describe('processLinkPreview', () => {
         message_id: 'msg-1',
         url: 'https://github.com',
         status: 'done',
-      })
+      }),
+      { onConflict: 'message_id,url' }
     )
   })
 
@@ -123,5 +130,19 @@ describe('processLinkPreview', () => {
     const job = { data: { messageId: 'msg-1', url: 'https://example.com' } } as any
 
     await expect(processLinkPreview(job)).rejects.toThrow()
+  })
+
+  it('resolves without throwing on retry with same data (idempotent upsert)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve('<meta property="og:title" content="Test" />'),
+    }))
+
+    const { processLinkPreview } = await getProcessor()
+    const job = { data: { messageId: 'msg-1', url: 'https://example.com' } } as any
+
+    await processLinkPreview(job)
+    await expect(processLinkPreview(job)).resolves.toBeUndefined()
+    expect(mockUpsert).toHaveBeenCalledTimes(2)
   })
 })
