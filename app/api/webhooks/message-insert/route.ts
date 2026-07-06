@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
         'fetch',
         { messageId, url },
         {
-          jobId: `link-preview:${messageId}:${url}`,
+          jobId: `link-preview_${messageId}_${url.replace(/:/g, '_')}`,
           attempts: 3,
           backoff: { type: 'exponential', delay: 2000 },
         }
