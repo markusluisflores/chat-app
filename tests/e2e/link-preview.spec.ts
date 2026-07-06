@@ -78,8 +78,9 @@ test.describe('Link preview pipeline', () => {
     await page.fill('input[placeholder="Write a message..."]', urlMessage)
     await page.press('input[placeholder="Write a message..."]', 'Enter')
 
-    // Wait for the message to appear in the UI
-    await expect(page.locator(`text=${urlMessage}`)).toBeVisible({ timeout: 5000 })
+    // Wait for the message to appear in the chat feed (scope to main to avoid
+    // matching the sidebar conversation-list preview of the same text)
+    await expect(page.locator('main').locator(`text=${urlMessage}`)).toBeVisible({ timeout: 5000 })
 
     // Find the message in Supabase
     const messagesResponse = await fetch(
