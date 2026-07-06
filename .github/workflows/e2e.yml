@@ -31,6 +31,12 @@ jobs:
           echo "base_url=$BASE_URL" >> "$GITHUB_OUTPUT"
       - run: npm ci
       - run: npx playwright install chromium --with-deps
+      - name: Start link-preview worker
+        run: npm run worker &
+        env:
+          REDIS_URL: ${{ secrets.STAGING_REDIS_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
       - run: npx playwright test
         env:
           BASE_URL: ${{ steps.url.outputs.base_url }}

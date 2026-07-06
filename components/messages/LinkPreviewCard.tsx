@@ -10,7 +10,7 @@ export function LinkPreviewCard({ meta }: Props) {
   }
 
   return (
-    <div className="mt-2 rounded-lg border border-gray-200 overflow-hidden max-w-xs">
+    <div data-testid="link-preview-card" className="mt-2 rounded-lg border border-gray-200 overflow-hidden max-w-xs">
       {meta.og_image_url && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
