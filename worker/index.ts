@@ -1,3 +1,4 @@
+// Entry point for Railway worker service
 import { Worker } from 'bullmq'
 import { QUEUE_NAME, getRedisConnection } from '@/lib/queue'
 import { processLinkPreview } from './processors/link-preview'

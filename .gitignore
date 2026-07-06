@@ -44,4 +44,3 @@ next-env.d.ts
 .claude/screenshots/*
 !.claude/screenshots/.gitkeep
 test-results/
-/dist/
