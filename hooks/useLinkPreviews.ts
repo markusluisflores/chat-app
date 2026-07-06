@@ -1,14 +1,14 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { OgMetadata } from '@/worker/processors/link-preview'
 
 export function useLinkPreviews(messageIds: string[]): Map<string, OgMetadata> {
   const [previews, setPreviews] = useState<Map<string, OgMetadata>>(new Map())
   const supabase = createClient()
-  // Stable channel name per hook instance — avoids topic collisions on remount
-  const channelRef = useRef(`link-previews:${Math.random().toString(36).slice(2)}`)
+  const id = useId()
+  const channelRef = useRef(`link-previews:${id}`)
   const idsKey = messageIds.join(',')
 
   useEffect(() => {

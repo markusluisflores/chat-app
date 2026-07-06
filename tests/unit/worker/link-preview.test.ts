@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import type { Job } from 'bullmq'
+import type { LinkPreviewJob } from '@/worker/processors/link-preview'
 
 const mockUpsert = vi.fn().mockResolvedValue({ error: null })
 vi.mock('@supabase/supabase-js', () => ({
@@ -95,7 +97,7 @@ describe('processLinkPreview', () => {
     }))
 
     const { processLinkPreview } = await getProcessor()
-    const job = { data: { messageId: 'msg-1', url: 'https://github.com' } } as any
+    const job = { data: { messageId: 'msg-1', url: 'https://github.com' } } as unknown as Job<LinkPreviewJob>
     await processLinkPreview(job)
 
     expect(mockUpsert).toHaveBeenCalledWith(
@@ -112,7 +114,7 @@ describe('processLinkPreview', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network error')))
 
     const { processLinkPreview } = await getProcessor()
-    const job = { data: { messageId: 'msg-1', url: 'https://bad.example.com' } } as any
+    const job = { data: { messageId: 'msg-1', url: 'https://bad.example.com' } } as unknown as Job<LinkPreviewJob>
 
     await expect(processLinkPreview(job)).rejects.toThrow()
     expect(mockUpsert).not.toHaveBeenCalled()
@@ -127,7 +129,7 @@ describe('processLinkPreview', () => {
     mockUpsert.mockResolvedValue({ error: new Error('DB constraint') })
 
     const { processLinkPreview } = await getProcessor()
-    const job = { data: { messageId: 'msg-1', url: 'https://example.com' } } as any
+    const job = { data: { messageId: 'msg-1', url: 'https://example.com' } } as unknown as Job<LinkPreviewJob>
 
     await expect(processLinkPreview(job)).rejects.toThrow()
   })
@@ -139,7 +141,7 @@ describe('processLinkPreview', () => {
     }))
 
     const { processLinkPreview } = await getProcessor()
-    const job = { data: { messageId: 'msg-1', url: 'https://example.com' } } as any
+    const job = { data: { messageId: 'msg-1', url: 'https://example.com' } } as unknown as Job<LinkPreviewJob>
 
     await processLinkPreview(job)
     await expect(processLinkPreview(job)).resolves.toBeUndefined()
