@@ -68,9 +68,19 @@ create table message_metadata (
 - **SELECT:** participants only — join to `messages`, check `sender_id = auth.uid() OR receiver_id = auth.uid()`
 - **INSERT / UPDATE:** service role only — the worker authenticates with `SUPABASE_SERVICE_ROLE_KEY`; clients never write to this table
 
+### `updated_at` trigger
+
+Add a `moddatetime` trigger (Supabase built-in extension) so `updated_at` is automatically stamped on every UPDATE:
+
+```sql
+create extension if not exists moddatetime;
+create trigger handle_updated_at before update on message_metadata
+  for each row execute procedure moddatetime(updated_at);
+```
+
 ### Realtime
 
-Enable Realtime on `message_metadata` so the client receives the enriched row the moment the worker writes it.
+Enable Realtime on `message_metadata` for **INSERT and UPDATE** events. The worker performs a single upsert — INSERT on first write, UPDATE if a duplicate job arrives and the unique constraint triggers a conflict resolution. The client must handle both events.
 
 ---
 
@@ -99,12 +109,26 @@ await queue.add(
 )
 ```
 
+### `fetchOgMetadata` return type
+
+The function must return an object whose keys match the `message_metadata` column names exactly:
+
+```ts
+interface OgMetadata {
+  og_title:       string | null
+  og_description: string | null
+  og_image_url:   string | null
+}
+```
+
+On fetch failure or missing tags, return `null` for each missing field (not `undefined` — Supabase will omit `undefined` keys from the upsert payload).
+
 ### Worker
 
 ```ts
 const worker = new Worker('link-preview', async (job) => {
   const { messageId, url } = job.data
-  const meta = await fetchOgMetadata(url)  // 5s timeout
+  const meta = await fetchOgMetadata(url)  // 5s timeout; returns OgMetadata
   await supabase.from('message_metadata').upsert({
     message_id: messageId,
     url,
@@ -165,7 +189,8 @@ components/
   messages/
     LinkPreviewCard.tsx             ← renders OG metadata below message bubble
 hooks/
-  useLinkPreviews.ts                ← subscribes to message_metadata Realtime changes
+  useLinkPreviews.ts                ← subscribes to message_metadata INSERT+UPDATE events;
+                                       returns Map<messageId, OgMetadata> for the active conversation
 ```
 
 ### Bull Board
