@@ -1,12 +1,15 @@
 import type { Message } from '@/types'
+import type { OgMetadata } from '@/worker/processors/link-preview'
 import { formatTime } from '@/lib/utils'
+import { LinkPreviewCard } from '@/components/messages/LinkPreviewCard'
 
 type Props = {
   message: Message
   isSent: boolean
+  preview?: OgMetadata
 }
 
-export function MessageBubble({ message, isSent }: Props) {
+export function MessageBubble({ message, isSent, preview }: Props) {
   return (
     <div className={`flex ${isSent ? 'justify-end' : 'justify-start'} mb-2`}>
       <div
@@ -24,6 +27,7 @@ export function MessageBubble({ message, isSent }: Props) {
         >
           {formatTime(message.created_at)}
         </span>
+        {preview && <LinkPreviewCard meta={preview} />}
       </div>
     </div>
   )
