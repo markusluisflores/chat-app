@@ -102,6 +102,6 @@ test.describe('Link preview pipeline', () => {
     expect(meta).toHaveProperty('status', 'done')
 
     // Assert preview card is visible in the UI
-    await expect(page.locator('[data-testid="link-preview-card"]')).toBeVisible({ timeout: 5000 })
+    await expect(page.locator('[data-testid="link-preview-card"]').last()).toBeVisible({ timeout: 5000 })
   })
 })
