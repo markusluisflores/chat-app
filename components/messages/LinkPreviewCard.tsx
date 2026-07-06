@@ -15,7 +15,7 @@ export function LinkPreviewCard({ meta }: Props) {
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={meta.og_image_url}
-          alt={meta.og_title || 'Preview image'}
+          alt=""
           className="w-full h-36 object-cover"
         />
       )}

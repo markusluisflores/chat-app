@@ -16,9 +16,10 @@ describe('LinkPreviewCard', () => {
   })
 
   it('renders image when og_image_url is present', () => {
-    render(<LinkPreviewCard meta={fullMeta} />)
-    const img = screen.getByRole('img')
-    expect(img.getAttribute('src')).toBe('https://github.com/og.png')
+    const { container } = render(<LinkPreviewCard meta={fullMeta} />)
+    const img = container.querySelector('img')
+    expect(img).not.toBeNull()
+    expect(img!.getAttribute('src')).toBe('https://github.com/og.png')
   })
 
   it('returns null when all fields are null', () => {
