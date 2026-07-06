@@ -45,10 +45,11 @@ export async function processLinkPreview(job: Job<LinkPreviewJob>): Promise<void
   // throws on network failure or timeout → BullMQ retries automatically
   const meta = await fetchOgMetadata(url)
 
-  await supabase.from('message_metadata').upsert({
+  const { error } = await supabase.from('message_metadata').upsert({
     message_id: messageId,
     url,
     ...meta,
     status: 'done',
   })
+  if (error) throw error
 }

@@ -110,4 +110,18 @@ describe('processLinkPreview', () => {
     await expect(processLinkPreview(job)).rejects.toThrow()
     expect(mockUpsert).not.toHaveBeenCalled()
   })
+
+  it('throws when upsert fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve('<meta property="og:title" content="Test" />'),
+    }))
+
+    mockUpsert.mockResolvedValue({ error: new Error('DB constraint') })
+
+    const { processLinkPreview } = await getProcessor()
+    const job = { data: { messageId: 'msg-1', url: 'https://example.com' } } as any
+
+    await expect(processLinkPreview(job)).rejects.toThrow()
+  })
 })
