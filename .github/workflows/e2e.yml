@@ -53,7 +53,8 @@ jobs:
           STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
           ENV_NAME: ${{ steps.url.outputs.env_name }}
         run: |
-          curl -fsSL https://railway.app/install.sh | sh
+          curl -fsSL https://railway.app/install.sh | bash
+          export PATH="$HOME/.railway/bin:$PATH"
           railway whoami
           railway variables set \
             "NEXT_PUBLIC_SUPABASE_URL=$STAGING_SUPABASE_URL" \
