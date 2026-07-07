@@ -53,7 +53,7 @@ jobs:
           STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
           ENV_NAME: ${{ steps.url.outputs.env_name }}
         run: |
-          npm install -g @railway/cli
+          curl -fsSL https://railway.app/install.sh | sh
           railway whoami
           railway variables set \
             "NEXT_PUBLIC_SUPABASE_URL=$STAGING_SUPABASE_URL" \
