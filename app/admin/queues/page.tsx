@@ -7,6 +7,9 @@ export default async function QueuesPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
+  const { data: profile } = await supabase.from('profiles').select('is_admin').eq('id', user.id).single()
+  if (!profile?.is_admin) redirect('/chat')
+
   const queue = getLinkPreviewQueue()
   const [counts, failedJobs] = await Promise.all([
     queue.getJobCounts('waiting', 'active', 'completed', 'failed'),
