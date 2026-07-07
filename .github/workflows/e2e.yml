@@ -32,29 +32,92 @@ jobs:
           echo "env_name=$ENV_NAME" >> "$GITHUB_OUTPUT"
           echo "base_url=$BASE_URL" >> "$GITHUB_OUTPUT"
 
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
-
       - name: Set staging Supabase vars on Railway PR environment
+        # Railway CLI rejects --project flag in CI with token auth.
+        # Use the Railway GraphQL API directly (same API the MCP uses).
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
           STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          ENV_NAME: ${{ steps.url.outputs.env_name }}
         run: |
-          ENV="${{ steps.url.outputs.env_name }}"
-          PROJECT="ae127dfc-f0d3-4e7d-ad87-759b1c27ac67"
+          python3 << 'EOF'
+          import os, json, urllib.request, sys
 
-          railway variables set \
-            "NEXT_PUBLIC_SUPABASE_URL=${STAGING_SUPABASE_URL}" \
-            "NEXT_PUBLIC_SUPABASE_ANON_KEY=${STAGING_SUPABASE_ANON_KEY}" \
-            --service chat-app --environment "$ENV" --project "$PROJECT"
+          token = os.environ['RAILWAY_TOKEN']
+          project_id = 'ae127dfc-f0d3-4e7d-ad87-759b1c27ac67'
+          env_name = os.environ['ENV_NAME']
 
-          railway variables set \
-            "NEXT_PUBLIC_SUPABASE_URL=${STAGING_SUPABASE_URL}" \
-            "SUPABASE_SERVICE_ROLE_KEY=${STAGING_SUPABASE_SERVICE_ROLE_KEY}" \
-            "RAILWAY_DOCKERFILE_PATH=Dockerfile.worker" \
-            --service worker --environment "$ENV" --project "$PROJECT"
+          def gql(query, variables=None):
+              req = urllib.request.Request(
+                  'https://backboard.railway.app/graphql/v2',
+                  data=json.dumps({'query': query, 'variables': variables or {}}).encode(),
+                  headers={
+                      'Authorization': f'Bearer {token}',
+                      'Content-Type': 'application/json',
+                  }
+              )
+              resp = urllib.request.urlopen(req)
+              data = json.loads(resp.read())
+              if 'errors' in data:
+                  print('GraphQL errors:', data['errors'], file=sys.stderr)
+                  sys.exit(1)
+              return data['data']
+
+          # Resolve environment and service IDs by name
+          info = gql('''
+          query($projectId: String!) {
+            project(id: $projectId) {
+              environments { edges { node { id name } } }
+              services { edges { node { id name } } }
+            }
+          }
+          ''', {'projectId': project_id})
+
+          envs = {e['node']['name']: e['node']['id']
+                  for e in info['project']['environments']['edges']}
+          svcs = {s['node']['name']: s['node']['id']
+                  for s in info['project']['services']['edges']}
+
+          env_id = envs.get(env_name)
+          if not env_id:
+              print(f'Environment "{env_name}" not found. Available: {list(envs)}', file=sys.stderr)
+              sys.exit(1)
+
+          chat_id = svcs['chat-app']
+          worker_id = svcs['worker']
+          print(f'env_id={env_id}  chat_id={chat_id}  worker_id={worker_id}')
+
+          upsert = '''
+          mutation($input: VariableCollectionUpsertInput!) {
+            variableCollectionUpsert(input: $input)
+          }
+          '''
+
+          gql(upsert, {'input': {
+              'projectId': project_id,
+              'environmentId': env_id,
+              'serviceId': chat_id,
+              'variables': {
+                  'NEXT_PUBLIC_SUPABASE_URL': os.environ['STAGING_SUPABASE_URL'],
+                  'NEXT_PUBLIC_SUPABASE_ANON_KEY': os.environ['STAGING_SUPABASE_ANON_KEY'],
+              },
+          }})
+          print('chat-app vars set')
+
+          gql(upsert, {'input': {
+              'projectId': project_id,
+              'environmentId': env_id,
+              'serviceId': worker_id,
+              'variables': {
+                  'NEXT_PUBLIC_SUPABASE_URL': os.environ['STAGING_SUPABASE_URL'],
+                  'SUPABASE_SERVICE_ROLE_KEY': os.environ['STAGING_SUPABASE_SERVICE_ROLE_KEY'],
+                  'RAILWAY_DOCKERFILE_PATH': 'Dockerfile.worker',
+              },
+          }})
+          print('worker vars set')
+          EOF
 
       - name: Point staging Supabase webhook at this PR environment
         env:
@@ -96,7 +159,7 @@ jobs:
               data=json.dumps({'query': sql}).encode(),
               headers={
                   'Authorization': f'Bearer {token}',
-                  'Content-Type': 'application/json'
+                  'Content-Type': 'application/json',
               }
           )
           resp = urllib.request.urlopen(req)
@@ -104,25 +167,65 @@ jobs:
           EOF
 
       - name: Wait for Railway redeployment
+        # Poll the Railway GraphQL API for chat-app SUCCESS after var change triggers redeploy.
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          ENV_NAME: ${{ steps.url.outputs.env_name }}
         run: |
-          ENV="${{ steps.url.outputs.env_name }}"
-          PROJECT="ae127dfc-f0d3-4e7d-ad87-759b1c27ac67"
+          python3 << 'EOF'
+          import os, json, urllib.request, time, sys
 
-          railway link --project "$PROJECT" --environment "$ENV" --service chat-app
+          token = os.environ['RAILWAY_TOKEN']
+          project_id = 'ae127dfc-f0d3-4e7d-ad87-759b1c27ac67'
+          env_name = os.environ['ENV_NAME']
 
-          echo "Polling for chat-app redeployment..."
-          sleep 10
-          for i in $(seq 1 24); do
-            STATUS=$(railway deployment list --service chat-app --limit 1 --json 2>/dev/null \
-              | python3 -c "import json,sys; d=json.load(sys.stdin); print(d[0]['status'] if d else 'UNKNOWN')" 2>/dev/null \
-              || echo "UNKNOWN")
-            echo "Attempt $i: chat-app = $STATUS"
-            [ "$STATUS" = "SUCCESS" ] && break
-            [ "$STATUS" = "FAILED" ] && { echo "Redeployment failed"; exit 1; }
-            sleep 15
-          done
+          def gql(query, variables=None):
+              req = urllib.request.Request(
+                  'https://backboard.railway.app/graphql/v2',
+                  data=json.dumps({'query': query, 'variables': variables or {}}).encode(),
+                  headers={
+                      'Authorization': f'Bearer {token}',
+                      'Content-Type': 'application/json',
+                  }
+              )
+              return json.loads(urllib.request.urlopen(req).read())['data']
+
+          info = gql('''
+          query($projectId: String!) {
+            project(id: $projectId) {
+              environments { edges { node { id name } } }
+              services { edges { node { id name } } }
+            }
+          }
+          ''', {'projectId': project_id})
+
+          env_id = next(e['node']['id'] for e in info['project']['environments']['edges']
+                        if e['node']['name'] == env_name)
+          svc_id = next(s['node']['id'] for s in info['project']['services']['edges']
+                        if s['node']['name'] == 'chat-app')
+
+          print('Waiting for chat-app redeployment...')
+          time.sleep(10)
+          for i in range(1, 25):
+              d = gql('''
+              query($serviceId: String!, $environmentId: String!) {
+                deployments(
+                  first: 1
+                  input: { serviceId: $serviceId, environmentId: $environmentId }
+                  orderBy: { createdAt: DESC }
+                ) { edges { node { status } } }
+              }
+              ''', {'serviceId': svc_id, 'environmentId': env_id})
+              edges = d['deployments']['edges']
+              status = edges[0]['node']['status'] if edges else 'UNKNOWN'
+              print(f'Attempt {i}: {status}')
+              if status == 'SUCCESS':
+                  break
+              if status == 'FAILED':
+                  print('Redeployment failed', file=sys.stderr)
+                  sys.exit(1)
+              time.sleep(15)
+          EOF
 
       - run: npm ci
       - run: npx playwright install chromium --with-deps
