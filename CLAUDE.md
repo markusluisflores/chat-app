@@ -82,7 +82,7 @@ Playwright test users (`playwright-test-a@mailinator.com`, `playwright-test-b@ma
 
 **Railway preview URL format:** `https://chat-app-{env-name}.up.railway.app`. Construct `env-name` from `github.event.deployment_status.environment` (format: `<project> / <env-name>`) by stripping the project prefix: `${FULL_ENV##* / }`. Neither `target_url` nor `environment_url` from the `deployment_status` event gives the app URL — both point to the Railway dashboard.
 
-**New PR environments inherit Railway vars from production by default.** When a new PR environment is created, manually set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to the staging values via Railway dashboard or `railway variables set --environment <env>`. Without this, the PR preview will connect to the production Supabase database.
+**New PR environments inherit Railway vars from production by default.** The E2E workflow (`e2e.yml`) automatically corrects this before running Playwright: it sets `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` to staging values on both the chat-app and worker services, and updates the staging webhook function to point at the PR's Railway URL. Requires GitHub secrets `RAILWAY_TOKEN`, `STAGING_SUPABASE_SERVICE_ROLE_KEY`, and `STAGING_SUPABASE_WEBHOOK_SECRET`. See issue #25 and PR #26.
 
 ### Environment
 
