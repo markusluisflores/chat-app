@@ -16,6 +16,7 @@ export async function createClient() {
             cookieStore.set(name, value, options)
           )
         } catch (e) {
+          // eslint-disable-next-line no-console -- intentional dev-only debug output
           if (process.env.NODE_ENV === 'development') console.warn('Supabase setAll error:', e)
         }
       },

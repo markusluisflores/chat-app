@@ -7,7 +7,12 @@ describe('queue infrastructure', () => {
 
   it('getRedisConnection parses host, port and password from REDIS_URL', async () => {
     const { getRedisConnection } = await import('@/lib/queue')
-    const conn = getRedisConnection()
+    // ConnectionOptions is RedisOptions | ClusterOptions; we always return the
+    // RedisOptions variant so cast to its shape for the assertions.
+    const conn = getRedisConnection() as unknown as {
+      host: string; port: number; password: string
+      maxRetriesPerRequest: null; enableReadyCheck: boolean
+    }
     expect(conn.host).toBe('localhost')
     expect(conn.port).toBe(6379)
     expect(conn.password).toBe('testpass')

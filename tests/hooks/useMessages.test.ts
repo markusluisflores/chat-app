@@ -8,7 +8,7 @@ let insertCallback: ((payload: { new: Message }) => void) | null = null
 // Simulates PostgrestBuilder's lazy fetch — the HTTP request only fires when
 // .then() is called. Without this, tests would pass even if .then() is missing
 // in the source, masking the "RPC called but no HTTP request sent" bug.
-function makeLazyBuilder(thenSpy: ReturnType<typeof vi.fn>) {
+function makeLazyBuilder(thenSpy: () => void) {
   return {
     then(onfulfilled?: (v: unknown) => unknown) {
       thenSpy()

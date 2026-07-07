@@ -128,3 +128,20 @@ gh workflow run e2e.yml -f environment=<railway-env-name>
 | `Environment "X" not found` on Railway step | PR environment name doesn't match Railway's | Check "Resolve environment name" step logs for the raw value of `deployment_status.environment` |
 | Playwright tests fail with auth errors | PR environment is still using production Supabase vars | Check "Set staging Supabase vars" step — if it passed, confirm Railway redeployed the service with the new vars |
 | `migrate.yml` fails with migration conflict | Staging has a migration applied out-of-band (e.g., via MCP) that isn't in the branch | Make the migration idempotent (`IF NOT EXISTS`) and remove the phantom entry from `supabase_migrations.schema_migrations` |
+
+## Operations
+
+### Production Rollback
+
+Railway keeps a full deployment history per service. To roll back a bad production deploy:
+
+1. Railway dashboard → project `invigorating-vitality` → `chat-app` service → **Deployments** tab
+2. Find the last successful deployment → click **⋮** → **Redeploy**
+
+Or via CLI:
+```bash
+railway deployments          # list recent deployments with IDs
+railway redeploy <id>        # redeploy a specific version
+```
+
+The rollback is instant — Railway swaps the running container without a rebuild.
