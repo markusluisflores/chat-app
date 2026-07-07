@@ -60,7 +60,7 @@ jobs:
 
           def gql(query, variables=None):
               req = urllib.request.Request(
-                  'https://backboard.railway.app/graphql/v2',
+                  'https://backboard.railway.com/graphql/v2',
                   data=json.dumps({'query': query, 'variables': variables or {}}).encode(),
                   headers={
                       'Authorization': f'Bearer {token}',
@@ -190,7 +190,7 @@ jobs:
 
           def gql(query, variables=None):
               req = urllib.request.Request(
-                  'https://backboard.railway.app/graphql/v2',
+                  'https://backboard.railway.com/graphql/v2',
                   data=json.dumps({'query': query, 'variables': variables or {}}).encode(),
                   headers={
                       'Authorization': f'Bearer {token}',
