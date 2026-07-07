@@ -2,6 +2,11 @@ name: E2E
 
 on:
   deployment_status: {}
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Railway environment name (e.g. chat-app-pr-26)'
+        required: true
 
 permissions:
   contents: read
@@ -10,8 +15,9 @@ jobs:
   e2e:
     name: Playwright smoke tests
     if: >-
-      github.event.deployment_status.state == 'success' &&
-      !contains(github.event.deployment_status.environment, 'production')
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.deployment_status.state == 'success' &&
+      !contains(github.event.deployment_status.environment, 'production'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,12 +29,15 @@ jobs:
       - name: Resolve environment name and BASE_URL
         id: url
         run: |
-          FULL_ENV="${{ github.event.deployment_status.environment }}"
-          ENV_NAME="${FULL_ENV##* / }"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ENV_NAME="${{ github.event.inputs.environment }}"
+          else
+            FULL_ENV="${{ github.event.deployment_status.environment }}"
+            ENV_NAME="${FULL_ENV##* / }"
+          fi
           BASE_URL="https://chat-app-${ENV_NAME}.up.railway.app"
-          echo "environment: $FULL_ENV"
-          echo "env_name:    $ENV_NAME"
-          echo "base_url:    $BASE_URL"
+          echo "env_name: $ENV_NAME"
+          echo "base_url: $BASE_URL"
           echo "env_name=$ENV_NAME" >> "$GITHUB_OUTPUT"
           echo "base_url=$BASE_URL" >> "$GITHUB_OUTPUT"
 

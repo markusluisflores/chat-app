@@ -95,3 +95,36 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 ### Types
 
 Shared types (`Profile`, `Message`, `Session`) are in `types/index.ts`. Use `@/` for all imports — it resolves to the repo root.
+
+## CI Runbook
+
+### e2e.yml — Playwright E2E smoke tests
+
+**Triggers:** `deployment_status` (automatic on Railway deploy) or `workflow_dispatch` (manual)
+
+**Manual trigger:**
+```bash
+gh workflow run e2e.yml -f environment=<railway-env-name>
+# Example: gh workflow run e2e.yml -f environment=chat-app-pr-26
+```
+
+**Secrets required:**
+
+| Secret | Purpose |
+|---|---|
+| `RAILWAY_TOKEN` | Railway personal API token — Account Settings → Tokens. Must be a personal token, not the CLI OAuth session token. |
+| `STAGING_SUPABASE_URL` | `NEXT_PUBLIC_SUPABASE_URL` for the staging Supabase project |
+| `STAGING_SUPABASE_ANON_KEY` | `NEXT_PUBLIC_SUPABASE_ANON_KEY` for staging |
+| `STAGING_SUPABASE_SERVICE_ROLE_KEY` | Service role key for staging (applied to worker service only) |
+| `SUPABASE_ACCESS_TOKEN` | Supabase Management API token for updating the webhook function |
+| `STAGING_SUPABASE_PROJECT_REF` | Project ref ID of the staging Supabase project |
+| `SUPABASE_WEBHOOK_SECRET` | Shared secret for `handle_message_insert_webhook` |
+
+**Known failure modes:**
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `HTTP Error 403` on Railway GraphQL step | `RAILWAY_TOKEN` is wrong type or expired | Regenerate at railway.app → Account → Settings → Tokens. Must be a personal API token. |
+| `Environment "X" not found` on Railway step | PR environment name doesn't match Railway's | Check "Resolve environment name" step logs for the raw value of `deployment_status.environment` |
+| Playwright tests fail with auth errors | PR environment is still using production Supabase vars | Check "Set staging Supabase vars" step — if it passed, confirm Railway redeployed the service with the new vars |
+| `migrate.yml` fails with migration conflict | Staging has a migration applied out-of-band (e.g., via MCP) that isn't in the branch | Make the migration idempotent (`IF NOT EXISTS`) and remove the phantom entry from `supabase_migrations.schema_migrations` |
