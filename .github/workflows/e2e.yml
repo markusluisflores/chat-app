@@ -7,6 +7,10 @@ on:
       environment:
         description: 'Railway environment name (e.g. chat-app-pr-26)'
         required: true
+      skip_var_set:
+        description: 'Skip setting Railway vars (use when already set manually via Railway MCP)'
+        required: false
+        default: 'false'
 
 permissions:
   contents: read
@@ -42,31 +46,98 @@ jobs:
           echo "base_url=$BASE_URL" >> "$GITHUB_OUTPUT"
 
       - name: Set staging Supabase vars on Railway PR environment
-        # backboard.railway.{app,com} is Cloudflare-gated (ASN 1010 block on GitHub Actions IPs).
-        # Use the Railway CLI — the designed CI/CD tool — with RAILWAY_PROJECT_ID instead of
-        # --project flag (which is rejected when using account token auth).
+        # Skippable via skip_var_set=true when vars are already set (e.g. via Railway MCP).
+        # Railway's Cloudflare applies a strict 10 RPS limit to requests without query params,
+        # which triggers extended IP bans on shared GitHub Actions runner IPs. The ?queryName=
+        # param opts into the standard 50 RPS limit instead. See Railway station thread on
+        # Cloudflare rate limiting for context.
+        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.skip_var_set != 'true' }}
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_PROJECT_ID: ae127dfc-f0d3-4e7d-ad87-759b1c27ac67
           STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
           STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
           ENV_NAME: ${{ steps.url.outputs.env_name }}
         run: |
-          curl -fsSL https://railway.app/install.sh | bash
-          export PATH="$HOME/.railway/bin:$PATH"
-          railway whoami
-          railway variables set \
-            "NEXT_PUBLIC_SUPABASE_URL=$STAGING_SUPABASE_URL" \
-            "NEXT_PUBLIC_SUPABASE_ANON_KEY=$STAGING_SUPABASE_ANON_KEY" \
-            --environment "$ENV_NAME" \
-            --service chat-app
-          railway variables set \
-            "NEXT_PUBLIC_SUPABASE_URL=$STAGING_SUPABASE_URL" \
-            "SUPABASE_SERVICE_ROLE_KEY=$STAGING_SUPABASE_SERVICE_ROLE_KEY" \
-            "RAILWAY_DOCKERFILE_PATH=Dockerfile.worker" \
-            --environment "$ENV_NAME" \
-            --service worker
+          python3 << 'EOF'
+          import os, json, urllib.request, sys
+
+          token = os.environ['RAILWAY_TOKEN']
+          project_id = 'ae127dfc-f0d3-4e7d-ad87-759b1c27ac67'
+          env_name = os.environ['ENV_NAME']
+
+          def gql(op_name, query, variables=None):
+              req = urllib.request.Request(
+                  f'https://backboard.railway.app/graphql/v2?queryName={op_name}',
+                  data=json.dumps({'query': query, 'variables': variables or {}}).encode(),
+                  headers={
+                      'Authorization': f'Bearer {token}',
+                      'Content-Type': 'application/json',
+                  }
+              )
+              try:
+                  resp = urllib.request.urlopen(req)
+              except urllib.error.HTTPError as e:
+                  print(f'HTTP {e.code} {e.reason}: {e.read().decode()}', file=sys.stderr)
+                  sys.exit(1)
+              data = json.loads(resp.read())
+              if 'errors' in data:
+                  print('GraphQL errors:', data['errors'], file=sys.stderr)
+                  sys.exit(1)
+              return data['data']
+
+          info = gql('getProjectInfo', '''
+          query($projectId: String!) {
+            project(id: $projectId) {
+              environments { edges { node { id name } } }
+              services { edges { node { id name } } }
+            }
+          }
+          ''', {'projectId': project_id})
+
+          envs = {e['node']['name']: e['node']['id']
+                  for e in info['project']['environments']['edges']}
+          svcs = {s['node']['name']: s['node']['id']
+                  for s in info['project']['services']['edges']}
+
+          env_id = envs.get(env_name)
+          if not env_id:
+              print(f'Environment "{env_name}" not found. Available: {list(envs)}', file=sys.stderr)
+              sys.exit(1)
+
+          chat_id = svcs['chat-app']
+          worker_id = svcs['worker']
+          print(f'env_id={env_id}  chat_id={chat_id}  worker_id={worker_id}')
+
+          upsert = '''
+          mutation($input: VariableCollectionUpsertInput!) {
+            variableCollectionUpsert(input: $input)
+          }
+          '''
+
+          gql('setChatAppVars', upsert, {'input': {
+              'projectId': project_id,
+              'environmentId': env_id,
+              'serviceId': chat_id,
+              'variables': {
+                  'NEXT_PUBLIC_SUPABASE_URL': os.environ['STAGING_SUPABASE_URL'],
+                  'NEXT_PUBLIC_SUPABASE_ANON_KEY': os.environ['STAGING_SUPABASE_ANON_KEY'],
+              },
+          }})
+          print('chat-app vars set')
+
+          gql('setWorkerVars', upsert, {'input': {
+              'projectId': project_id,
+              'environmentId': env_id,
+              'serviceId': worker_id,
+              'variables': {
+                  'NEXT_PUBLIC_SUPABASE_URL': os.environ['STAGING_SUPABASE_URL'],
+                  'SUPABASE_SERVICE_ROLE_KEY': os.environ['STAGING_SUPABASE_SERVICE_ROLE_KEY'],
+                  'RAILWAY_DOCKERFILE_PATH': 'Dockerfile.worker',
+              },
+          }})
+          print('worker vars set')
+          EOF
 
       - name: Point staging Supabase webhook at this PR environment
         env:
@@ -116,9 +187,8 @@ jobs:
           EOF
 
       - name: Wait for Railway redeployment
-        # Setting vars triggers an automatic redeploy. Wait a fixed 3 minutes — Railway
-        # PR environment builds typically complete in 60–120 s. GraphQL polling is not used
-        # here because backboard.railway.* is Cloudflare-gated from GitHub Actions IPs.
+        # Only needed when vars were just set — the var change triggers an automatic redeploy.
+        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.skip_var_set != 'true' }}
         run: sleep 180
 
       - run: npm ci
