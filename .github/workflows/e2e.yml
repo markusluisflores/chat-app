@@ -67,7 +67,11 @@ jobs:
                       'Content-Type': 'application/json',
                   }
               )
-              resp = urllib.request.urlopen(req)
+              try:
+                  resp = urllib.request.urlopen(req)
+              except urllib.error.HTTPError as e:
+                  print(f'HTTP {e.code} {e.reason}: {e.read().decode()}', file=sys.stderr)
+                  sys.exit(1)
               data = json.loads(resp.read())
               if 'errors' in data:
                   print('GraphQL errors:', data['errors'], file=sys.stderr)
