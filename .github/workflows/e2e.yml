@@ -1,4 +1,5 @@
 name: E2E
+# trigger: re-run with corrected RAILWAY_TOKEN secret
 
 on:
   deployment_status: {}
