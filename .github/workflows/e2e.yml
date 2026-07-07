@@ -60,7 +60,7 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
-          STAGING_SUPABASE_WEBHOOK_SECRET: ${{ secrets.STAGING_SUPABASE_WEBHOOK_SECRET }}
+          STAGING_SUPABASE_WEBHOOK_SECRET: ${{ secrets.SUPABASE_WEBHOOK_SECRET }}
           BASE_URL: ${{ steps.url.outputs.base_url }}
         run: |
           python3 << 'EOF'
