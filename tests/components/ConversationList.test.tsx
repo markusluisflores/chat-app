@@ -36,9 +36,7 @@ vi.mock('@/lib/supabase/client', () => ({
           }
           return ch
         }),
-        subscribe: vi.fn(function() {
-          return this
-        }),
+        subscribe: vi.fn(() => ch),
         teardown: vi.fn(),
       }
       return ch

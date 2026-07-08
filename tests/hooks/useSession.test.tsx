@@ -32,7 +32,7 @@ const mockSession: Session = {
 describe('useSession', () => {
   it('returns the session passed as initialSession', () => {
     const wrapper = ({ children }: { children: React.ReactNode }) =>
-      React.createElement(SessionProvider, { initialSession: mockSession }, children)
+      <SessionProvider initialSession={mockSession}>{children}</SessionProvider>
 
     const { result } = renderHook(() => useSession(), { wrapper })
     expect(result.current.session).toEqual(mockSession)
@@ -40,7 +40,7 @@ describe('useSession', () => {
 
   it('returns null when no initial session', () => {
     const wrapper = ({ children }: { children: React.ReactNode }) =>
-      React.createElement(SessionProvider, { initialSession: null }, children)
+      <SessionProvider initialSession={null}>{children}</SessionProvider>
 
     const { result } = renderHook(() => useSession(), { wrapper })
     expect(result.current.session).toBeNull()

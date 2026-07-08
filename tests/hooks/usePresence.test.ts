@@ -34,7 +34,8 @@ vi.mock('@/lib/supabase/client', () => ({
 
 function makeWrapper(userId: string) {
   return function Wrapper({ children }: { children: React.ReactNode }) {
-    return React.createElement(PresenceProvider, { currentUserId: userId }, children)
+    // eslint-disable-next-line react/no-children-prop -- .ts file can't use JSX; children in props is required by the component's explicit prop type
+    return React.createElement(PresenceProvider, { currentUserId: userId, children })
   }
 }
 
