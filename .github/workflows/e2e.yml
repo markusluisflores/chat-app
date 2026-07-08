@@ -47,10 +47,9 @@ jobs:
 
       - name: Set staging Supabase vars on Railway PR environment
         # Skippable via skip_var_set=true when vars are already set (e.g. via Railway MCP).
-        # Railway's Cloudflare applies a strict 10 RPS limit to requests without query params,
-        # which triggers extended IP bans on shared GitHub Actions runner IPs. The ?queryName=
-        # param opts into the standard 50 RPS limit instead. See Railway station thread on
-        # Cloudflare rate limiting for context.
+        # Uses curl (not Python urllib) — Cloudflare blocks Python-urllib/3.x user-agent on
+        # Railway's API with error 1010 (bot protection). curl's user-agent is accepted.
+        # ?queryName= opts into the 50 RPS limit instead of the stricter 10 RPS limit.
         if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.skip_var_set != 'true' }}
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
@@ -59,85 +58,59 @@ jobs:
           STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
           ENV_NAME: ${{ steps.url.outputs.env_name }}
         run: |
-          python3 << 'EOF'
-          import os, json, urllib.request, sys
+          PROJECT_ID="ae127dfc-f0d3-4e7d-ad87-759b1c27ac67"
+          RAILWAY_URL="https://backboard.railway.app/graphql/v2"
 
-          token = os.environ['RAILWAY_TOKEN']
-          project_id = 'ae127dfc-f0d3-4e7d-ad87-759b1c27ac67'
-          env_name = os.environ['ENV_NAME']
-
-          def gql(op_name, query, variables=None):
-              req = urllib.request.Request(
-                  f'https://backboard.railway.app/graphql/v2?queryName={op_name}',
-                  data=json.dumps({'query': query, 'variables': variables or {}}).encode(),
-                  headers={
-                      'Authorization': f'Bearer {token}',
-                      'Content-Type': 'application/json',
-                  }
-              )
-              try:
-                  resp = urllib.request.urlopen(req)
-              except urllib.error.HTTPError as e:
-                  print(f'HTTP {e.code} {e.reason}: {e.read().decode()}', file=sys.stderr)
-                  sys.exit(1)
-              data = json.loads(resp.read())
-              if 'errors' in data:
-                  print('GraphQL errors:', data['errors'], file=sys.stderr)
-                  sys.exit(1)
-              return data['data']
-
-          info = gql('getProjectInfo', '''
-          query($projectId: String!) {
-            project(id: $projectId) {
-              environments { edges { node { id name } } }
-              services { edges { node { id name } } }
-            }
+          gql() {
+            local op_name=$1
+            local payload=$2
+            local response http_code body
+            response=$(curl -s \
+              -X POST \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "$payload" \
+              -w "\n%{http_code}" \
+              "${RAILWAY_URL}?queryName=${op_name}")
+            http_code=$(printf '%s' "$response" | tail -1)
+            body=$(printf '%s' "$response" | head -n -1)
+            if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+              echo "HTTP $http_code on ${op_name}: $body" >&2; exit 1
+            fi
+            if printf '%s' "$body" | jq -e '.errors' > /dev/null 2>&1; then
+              echo "GraphQL errors on ${op_name}: $(printf '%s' "$body" | jq '.errors')" >&2; exit 1
+            fi
+            printf '%s' "$body"
           }
-          ''', {'projectId': project_id})
 
-          envs = {e['node']['name']: e['node']['id']
-                  for e in info['project']['environments']['edges']}
-          svcs = {s['node']['name']: s['node']['id']
-                  for s in info['project']['services']['edges']}
+          INFO=$(gql "getProjectInfo" "$(jq -n --arg id "$PROJECT_ID" '{
+            query: "query($projectId:String!){project(id:$projectId){environments{edges{node{id name}}}services{edges{node{id name}}}}}",
+            variables: {projectId: $id}
+          }')")
 
-          env_id = envs.get(env_name)
-          if not env_id:
-              print(f'Environment "{env_name}" not found. Available: {list(envs)}', file=sys.stderr)
-              sys.exit(1)
+          ENV_ID=$(printf '%s' "$INFO" | jq -r ".data.project.environments.edges[] | select(.node.name == \"$ENV_NAME\") | .node.id")
+          CHAT_ID=$(printf '%s' "$INFO" | jq -r '.data.project.services.edges[] | select(.node.name == "chat-app") | .node.id')
+          WORKER_ID=$(printf '%s' "$INFO" | jq -r '.data.project.services.edges[] | select(.node.name == "worker") | .node.id')
 
-          chat_id = svcs['chat-app']
-          worker_id = svcs['worker']
-          print(f'env_id={env_id}  chat_id={chat_id}  worker_id={worker_id}')
+          if [ -z "$ENV_ID" ]; then
+            echo "Environment \"$ENV_NAME\" not found. Available: $(printf '%s' "$INFO" | jq -r '[.data.project.environments.edges[].node.name]')" >&2
+            exit 1
+          fi
+          echo "env_id=$ENV_ID  chat_id=$CHAT_ID  worker_id=$WORKER_ID"
 
-          upsert = '''
-          mutation($input: VariableCollectionUpsertInput!) {
-            variableCollectionUpsert(input: $input)
-          }
-          '''
+          UPSERT='mutation($input:VariableCollectionUpsertInput!){variableCollectionUpsert(input:$input)}'
 
-          gql('setChatAppVars', upsert, {'input': {
-              'projectId': project_id,
-              'environmentId': env_id,
-              'serviceId': chat_id,
-              'variables': {
-                  'NEXT_PUBLIC_SUPABASE_URL': os.environ['STAGING_SUPABASE_URL'],
-                  'NEXT_PUBLIC_SUPABASE_ANON_KEY': os.environ['STAGING_SUPABASE_ANON_KEY'],
-              },
-          }})
-          print('chat-app vars set')
+          gql "setChatAppVars" "$(jq -n \
+            --arg q "$UPSERT" --arg pid "$PROJECT_ID" --arg eid "$ENV_ID" --arg sid "$CHAT_ID" \
+            --arg url "$STAGING_SUPABASE_URL" --arg key "$STAGING_SUPABASE_ANON_KEY" \
+            '{query:$q,variables:{input:{projectId:$pid,environmentId:$eid,serviceId:$sid,variables:{NEXT_PUBLIC_SUPABASE_URL:$url,NEXT_PUBLIC_SUPABASE_ANON_KEY:$key}}}}')"
+          echo "chat-app vars set"
 
-          gql('setWorkerVars', upsert, {'input': {
-              'projectId': project_id,
-              'environmentId': env_id,
-              'serviceId': worker_id,
-              'variables': {
-                  'NEXT_PUBLIC_SUPABASE_URL': os.environ['STAGING_SUPABASE_URL'],
-                  'SUPABASE_SERVICE_ROLE_KEY': os.environ['STAGING_SUPABASE_SERVICE_ROLE_KEY'],
-                  'RAILWAY_DOCKERFILE_PATH': 'Dockerfile.worker',
-              },
-          }})
-          print('worker vars set')
-          EOF
+          gql "setWorkerVars" "$(jq -n \
+            --arg q "$UPSERT" --arg pid "$PROJECT_ID" --arg eid "$ENV_ID" --arg sid "$WORKER_ID" \
+            --arg url "$STAGING_SUPABASE_URL" --arg srk "$STAGING_SUPABASE_SERVICE_ROLE_KEY" \
+            '{query:$q,variables:{input:{projectId:$pid,environmentId:$eid,serviceId:$sid,variables:{NEXT_PUBLIC_SUPABASE_URL:$url,SUPABASE_SERVICE_ROLE_KEY:$srk,RAILWAY_DOCKERFILE_PATH:"Dockerfile.worker"}}}}')"
+          echo "worker vars set"
 
       - name: Point staging Supabase webhook at this PR environment
         # Uses curl (not Python urllib) to call the Supabase Management API — Python urllib's
