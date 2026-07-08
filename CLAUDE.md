@@ -82,7 +82,7 @@ Playwright test users (`playwright-test-a@mailinator.com`, `playwright-test-b@ma
 
 **Railway preview URL format:** `https://chat-app-{env-name}.up.railway.app`. Construct `env-name` from `github.event.deployment_status.environment` (format: `<project> / <env-name>`) by stripping the project prefix: `${FULL_ENV##* / }`. Neither `target_url` nor `environment_url` from the `deployment_status` event gives the app URL — both point to the Railway dashboard.
 
-**New PR environments inherit Railway vars from production by default.** When a new PR environment is created, manually set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to the staging values via Railway dashboard or `railway variables set --environment <env>`. Without this, the PR preview will connect to the production Supabase database.
+**New PR environments inherit Railway vars from production by default.** The E2E workflow (`e2e.yml`) automatically corrects this before running Playwright: it sets `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` to staging values on both the chat-app and worker services, and updates the staging webhook function to point at the PR's Railway URL. Requires GitHub secrets `RAILWAY_TOKEN`, `STAGING_SUPABASE_SERVICE_ROLE_KEY`, and `STAGING_SUPABASE_WEBHOOK_SECRET`. See issue #25 and PR #26.
 
 ### Environment
 
@@ -95,3 +95,36 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 ### Types
 
 Shared types (`Profile`, `Message`, `Session`) are in `types/index.ts`. Use `@/` for all imports — it resolves to the repo root.
+
+## CI Runbook
+
+### e2e.yml — Playwright E2E smoke tests
+
+**Triggers:** `deployment_status` (automatic on Railway deploy) or `workflow_dispatch` (manual)
+
+**Manual trigger:**
+```bash
+gh workflow run e2e.yml -f environment=<railway-env-name>
+# Example: gh workflow run e2e.yml -f environment=chat-app-pr-26
+```
+
+**Secrets required:**
+
+| Secret | Purpose |
+|---|---|
+| `RAILWAY_TOKEN` | Railway personal API token — Account Settings → Tokens. Must be a personal token, not the CLI OAuth session token. |
+| `STAGING_SUPABASE_URL` | `NEXT_PUBLIC_SUPABASE_URL` for the staging Supabase project |
+| `STAGING_SUPABASE_ANON_KEY` | `NEXT_PUBLIC_SUPABASE_ANON_KEY` for staging |
+| `STAGING_SUPABASE_SERVICE_ROLE_KEY` | Service role key for staging (applied to worker service only) |
+| `SUPABASE_ACCESS_TOKEN` | Supabase Management API token for updating the webhook function |
+| `STAGING_SUPABASE_PROJECT_REF` | Project ref ID of the staging Supabase project |
+| `SUPABASE_WEBHOOK_SECRET` | Shared secret for `handle_message_insert_webhook` |
+
+**Known failure modes:**
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `HTTP Error 403` on Railway GraphQL step | `RAILWAY_TOKEN` is wrong type or expired | Regenerate at railway.app → Account → Settings → Tokens. Must be a personal API token. |
+| `Environment "X" not found` on Railway step | PR environment name doesn't match Railway's | Check "Resolve environment name" step logs for the raw value of `deployment_status.environment` |
+| Playwright tests fail with auth errors | PR environment is still using production Supabase vars | Check "Set staging Supabase vars" step — if it passed, confirm Railway redeployed the service with the new vars |
+| `migrate.yml` fails with migration conflict | Staging has a migration applied out-of-band (e.g., via MCP) that isn't in the branch | Make the migration idempotent (`IF NOT EXISTS`) and remove the phantom entry from `supabase_migrations.schema_migrations` |

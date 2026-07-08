@@ -2,6 +2,15 @@ name: E2E
 
 on:
   deployment_status: {}
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Railway environment name (e.g. chat-app-pr-26)'
+        required: true
+      skip_var_set:
+        description: 'Skip setting Railway vars (use when already set manually via Railway MCP)'
+        required: false
+        default: 'false'
 
 permissions:
   contents: read
@@ -10,8 +19,9 @@ jobs:
   e2e:
     name: Playwright smoke tests
     if: >-
-      github.event.deployment_status.state == 'success' &&
-      !contains(github.event.deployment_status.environment, 'production')
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.deployment_status.state == 'success' &&
+      !contains(github.event.deployment_status.environment, 'production'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,16 +29,144 @@ jobs:
         with:
           node-version: 'lts/*'
           cache: 'npm'
-      - name: Resolve BASE_URL
+
+      - name: Resolve environment name and BASE_URL
         id: url
         run: |
-          FULL_ENV="${{ github.event.deployment_status.environment }}"
-          ENV_NAME="${FULL_ENV##* / }"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ENV_NAME="${{ github.event.inputs.environment }}"
+          else
+            FULL_ENV="${{ github.event.deployment_status.environment }}"
+            ENV_NAME="${FULL_ENV##* / }"
+          fi
           BASE_URL="https://chat-app-${ENV_NAME}.up.railway.app"
-          echo "environment: $FULL_ENV"
-          echo "env_name:    $ENV_NAME"
-          echo "base_url:    $BASE_URL"
+          echo "env_name: $ENV_NAME"
+          echo "base_url: $BASE_URL"
+          echo "env_name=$ENV_NAME" >> "$GITHUB_OUTPUT"
           echo "base_url=$BASE_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Set staging Supabase vars on Railway PR environment
+        # Skippable via skip_var_set=true when vars are already set (e.g. via Railway MCP).
+        # Uses curl (not Python urllib) — Cloudflare blocks Python-urllib/3.x user-agent on
+        # Railway's API with error 1010 (bot protection). curl's user-agent is accepted.
+        # ?queryName= opts into the 50 RPS limit instead of the stricter 10 RPS limit.
+        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.skip_var_set != 'true' }}
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          ENV_NAME: ${{ steps.url.outputs.env_name }}
+        run: |
+          PROJECT_ID="ae127dfc-f0d3-4e7d-ad87-759b1c27ac67"
+          RAILWAY_URL="https://backboard.railway.app/graphql/v2"
+
+          gql() {
+            local op_name=$1
+            local payload=$2
+            local response http_code body
+            response=$(curl -s \
+              -X POST \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "$payload" \
+              -w "\n%{http_code}" \
+              "${RAILWAY_URL}?queryName=${op_name}")
+            http_code=$(printf '%s' "$response" | tail -1)
+            body=$(printf '%s' "$response" | head -n -1)
+            if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+              echo "HTTP $http_code on ${op_name}: $body" >&2; exit 1
+            fi
+            if printf '%s' "$body" | jq -e '.errors' > /dev/null 2>&1; then
+              echo "GraphQL errors on ${op_name}: $(printf '%s' "$body" | jq '.errors')" >&2; exit 1
+            fi
+            printf '%s' "$body"
+          }
+
+          INFO=$(gql "getProjectInfo" "$(jq -n --arg id "$PROJECT_ID" '{
+            query: "query($projectId:String!){project(id:$projectId){environments{edges{node{id name}}}services{edges{node{id name}}}}}",
+            variables: {projectId: $id}
+          }')")
+
+          ENV_ID=$(printf '%s' "$INFO" | jq -r ".data.project.environments.edges[] | select(.node.name == \"$ENV_NAME\") | .node.id")
+          CHAT_ID=$(printf '%s' "$INFO" | jq -r '.data.project.services.edges[] | select(.node.name == "chat-app") | .node.id')
+          WORKER_ID=$(printf '%s' "$INFO" | jq -r '.data.project.services.edges[] | select(.node.name == "worker") | .node.id')
+
+          if [ -z "$ENV_ID" ]; then
+            echo "Environment \"$ENV_NAME\" not found. Available: $(printf '%s' "$INFO" | jq -r '[.data.project.environments.edges[].node.name]')" >&2
+            exit 1
+          fi
+          echo "env_id=$ENV_ID  chat_id=$CHAT_ID  worker_id=$WORKER_ID"
+
+          UPSERT='mutation($input:VariableCollectionUpsertInput!){variableCollectionUpsert(input:$input)}'
+
+          gql "setChatAppVars" "$(jq -n \
+            --arg q "$UPSERT" --arg pid "$PROJECT_ID" --arg eid "$ENV_ID" --arg sid "$CHAT_ID" \
+            --arg url "$STAGING_SUPABASE_URL" --arg key "$STAGING_SUPABASE_ANON_KEY" \
+            '{query:$q,variables:{input:{projectId:$pid,environmentId:$eid,serviceId:$sid,variables:{NEXT_PUBLIC_SUPABASE_URL:$url,NEXT_PUBLIC_SUPABASE_ANON_KEY:$key}}}}')"
+          echo "chat-app vars set"
+
+          gql "setWorkerVars" "$(jq -n \
+            --arg q "$UPSERT" --arg pid "$PROJECT_ID" --arg eid "$ENV_ID" --arg sid "$WORKER_ID" \
+            --arg url "$STAGING_SUPABASE_URL" --arg srk "$STAGING_SUPABASE_SERVICE_ROLE_KEY" \
+            '{query:$q,variables:{input:{projectId:$pid,environmentId:$eid,serviceId:$sid,variables:{NEXT_PUBLIC_SUPABASE_URL:$url,SUPABASE_SERVICE_ROLE_KEY:$srk,RAILWAY_DOCKERFILE_PATH:"Dockerfile.worker"}}}}')"
+          echo "worker vars set"
+
+      - name: Point staging Supabase webhook at this PR environment
+        # Uses curl (not Python urllib) to call the Supabase Management API — Python urllib's
+        # user-agent is blocked by Cloudflare bot protection (error 1010). curl's TLS
+        # fingerprint and user-agent are accepted. jq handles SQL escaping in the JSON body.
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+          STAGING_SUPABASE_WEBHOOK_SECRET: ${{ secrets.SUPABASE_WEBHOOK_SECRET }}
+          BASE_URL: ${{ steps.url.outputs.base_url }}
+        run: |
+          SQL=$(cat <<'SQLEOF'
+          CREATE OR REPLACE FUNCTION handle_message_insert_webhook()
+          RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $func$
+          begin
+            perform net.http_post(
+              url := '__BASE_URL__/api/webhooks/message-insert',
+              body := jsonb_build_object(
+                'type', 'INSERT', 'table', 'messages', 'schema', 'public',
+                'record', row_to_json(NEW)::jsonb
+              ),
+              headers := jsonb_build_object(
+                'Content-Type', 'application/json',
+                'x-webhook-secret', '__SECRET__'
+              )
+            );
+            return NEW;
+          end;
+          $func$;
+          SQLEOF
+          )
+          SQL="${SQL//__BASE_URL__/$BASE_URL}"
+          SQL="${SQL//__SECRET__/$STAGING_SUPABASE_WEBHOOK_SECRET}"
+
+          HTTP_STATUS=$(curl -s \
+            -o /tmp/webhook_response.json \
+            -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg q "$SQL" '{"query":$q}')" \
+            "https://api.supabase.com/v1/projects/$STAGING_SUPABASE_PROJECT_REF/database/query")
+
+          echo "HTTP Status: $HTTP_STATUS"
+          cat /tmp/webhook_response.json
+
+          if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
+            echo "Webhook update failed" >&2
+            exit 1
+          fi
+
+      - name: Wait for Railway redeployment
+        # Only needed when vars were just set — the var change triggers an automatic redeploy.
+        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.skip_var_set != 'true' }}
+        run: sleep 180
+
       - run: npm ci
       - run: npx playwright install chromium --with-deps
       - run: npx playwright test
@@ -36,6 +174,7 @@ jobs:
           BASE_URL: ${{ steps.url.outputs.base_url }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+
       - name: Upload test results
         if: failure()
         uses: actions/upload-artifact@v4
