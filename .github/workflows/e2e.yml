@@ -140,56 +140,37 @@ jobs:
           EOF
 
       - name: Point staging Supabase webhook at this PR environment
+        # Uses psql (direct Postgres connection) instead of the Supabase Management API
+        # (api.supabase.com) — the Management API is behind Cloudflare bot protection that
+        # blocks Python urllib with error code 1010. psql bypasses this entirely.
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PGPASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
           STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
           STAGING_SUPABASE_WEBHOOK_SECRET: ${{ secrets.SUPABASE_WEBHOOK_SECRET }}
           BASE_URL: ${{ steps.url.outputs.base_url }}
         run: |
-          python3 << 'EOF'
-          import os, json, urllib.request
-
-          base_url = os.environ['BASE_URL']
-          secret = os.environ['STAGING_SUPABASE_WEBHOOK_SECRET']
-          token = os.environ['SUPABASE_ACCESS_TOKEN']
-          ref = os.environ['STAGING_SUPABASE_PROJECT_REF']
-
-          sql = f"""
+          cat > /tmp/update_webhook.sql << SQLEOF
           CREATE OR REPLACE FUNCTION handle_message_insert_webhook()
-          RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $func$
+          RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS \$func\$
           begin
             perform net.http_post(
-              url := '{base_url}/api/webhooks/message-insert',
+              url := '${BASE_URL}/api/webhooks/message-insert',
               body := jsonb_build_object(
                 'type', 'INSERT', 'table', 'messages', 'schema', 'public',
                 'record', row_to_json(NEW)::jsonb
               ),
               headers := jsonb_build_object(
                 'Content-Type', 'application/json',
-                'x-webhook-secret', '{secret}'
+                'x-webhook-secret', '${STAGING_SUPABASE_WEBHOOK_SECRET}'
               )
             );
             return NEW;
           end;
-          $func$;
-          """
+          \$func\$;
+          SQLEOF
 
-          req = urllib.request.Request(
-              f'https://api.supabase.com/v1/projects/{ref}/database/query',
-              data=json.dumps({'query': sql}).encode(),
-              headers={
-                  'Authorization': f'Bearer {token}',
-                  'Content-Type': 'application/json',
-              }
-          )
-          try:
-              resp = urllib.request.urlopen(req)
-              print('Webhook updated:', resp.read().decode())
-          except urllib.error.HTTPError as e:
-              body = e.read().decode()
-              print(f'HTTP {e.code} {e.reason}: {body}', file=__import__('sys').stderr)
-              raise SystemExit(1)
-          EOF
+          psql "postgresql://postgres@db.${STAGING_SUPABASE_PROJECT_REF}.supabase.co:5432/postgres?sslmode=require" \
+            -f /tmp/update_webhook.sql
 
       - name: Wait for Railway redeployment
         # Only needed when vars were just set — the var change triggers an automatic redeploy.
