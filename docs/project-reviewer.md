@@ -1,7 +1,7 @@
 # Chat App — Project Reviewer & Interview Guide
 
 > **Living document.** Updated as new concepts are added or lessons are learned.
-> Last updated: 2026-07-05
+> Last updated: 2026-07-07
 
 ---
 
@@ -254,6 +254,28 @@ waiting → active → completed
 
 ---
 
+### 13. Railway Cloudflare Rate Limiting — The `?queryName=` Fix
+
+**Simple version:** When our CI pipeline tries to set Railway environment variables via the Railway API, it gets back a 403 "Forbidden" error — even with a valid token. The culprit isn't the token. It's Cloudflare, which protects Railway's API and applies an unusually strict rate limit to any request that's missing a specific query parameter.
+
+**The specific rule:** Railway's GraphQL API at `backboard.railway.app/graphql/v2` uses Cloudflare. Any request sent *without* a `?queryName=<something>` query parameter hits a 10 requests-per-second limit. GitHub Actions runs CI for thousands of projects, all from a shared pool of IP addresses — which means those IPs frequently exceed 10 RPS on Railway's API, triggering temporary IP bans that look like this: `HTTP 403: error code: 1010`.
+
+**The fix:** append `?queryName=<opName>` to every Railway GraphQL URL. This opts into a more generous rate limit (50 RPS). The operation name can be anything descriptive — it's primarily a Cloudflare routing hint, not a GraphQL protocol requirement.
+
+```python
+# Before: hits 10 RPS limit, shares a ban with every other CI job
+f'https://backboard.railway.app/graphql/v2'
+
+# After: opts into 50 RPS limit, not affected by other CI jobs' hits
+f'https://backboard.railway.app/graphql/v2?queryName={op_name}'
+```
+
+**Why it's hard to debug:** The 403 error looks like an authentication problem. You check the token — it's valid. You check the secret — correct. You try again — still 403. The IP ban lasts up to 24 hours, so retrying immediately doesn't help. Nothing in the error response tells you it's a rate limit; `error code: 1010` is a Cloudflare-specific code documented in their community forums, not in Railway's docs.
+
+**Interview talking point:** "We had a CI step that called the Railway GraphQL API and kept getting 403, even with a valid token. After researching the error code, I found that Railway's Cloudflare config applies a 10 RPS rate limit to requests without a specific query parameter — and shared GitHub Actions IPs exceed this all the time. The fix was a single query parameter: `?queryName=<opName>`. It opts into a higher limit and cost us nothing to add."
+
+---
+
 ### 11. PresenceContext Singleton
 
 **Simple version:** In the browser, there's only one Supabase client. When you open a channel by name, Supabase remembers it. If three different components all try to open the same channel and subscribe to it, Supabase sees it as one channel being subscribed to three times — which it rejects after the first time with an error.
@@ -324,6 +346,21 @@ Every feature followed this sequence, without exception — even small ones:
 
 ---
 
+### Code Quality Baseline (Shift-Left)
+
+**Simple version:** Catching a bug at commit time costs almost nothing. Catching it in a code review costs a full review cycle. Catching it in production costs users. "Shift-left" means pushing the quality gate as early in the chain as possible — ideally before the code ever reaches the reviewer.
+
+**This project's three-layer chain:**
+1. **Pre-commit (Husky + lint-staged):** ESLint auto-fixes staged files before they're committed. Developers see lint errors immediately, not after pushing.
+2. **CI (GitHub Actions):** `npx tsc --noEmit` type-checks all files — including `worker/` and `tests/` that Next.js build doesn't touch. `npm audit --audit-level=high` fails CI on any high or critical CVE. These are hard CI failures — the PR cannot merge.
+3. **Code review:** The human reviewer sees code that's already passed two automated gates, so review attention goes to logic and design rather than style and type errors.
+
+**Lesson learned: `tsc --noEmit` does NOT work in lint-staged.** When lint-staged passes file arguments to `tsc`, TypeScript bypasses `tsconfig.json` entirely — no `skipLibCheck`, no path aliases (`@/`), no module resolution settings. Everything in `node_modules` shows as an error. Type checking is a full-project operation and belongs only in CI.
+
+**Interview talking point:** "Shift-left means moving the quality gate earlier. Pre-commit catches lint. CI catches types and CVEs. Code review catches logic. Each layer checks something the previous layer can't — not the same thing three times."
+
+---
+
 ### Security Reviews
 
 **Simple version:** Before pushing any code, scan the diff for vulnerabilities. Common things to look for: user input being passed to redirects or SQL without validation, secrets hardcoded in files, permissions that are broader than they need to be.
@@ -377,7 +414,7 @@ Claude Code is a CLI tool (runs in your terminal) that can read files, write cod
 
 2. **Understand the cost model.** Subagents don't carry session history. Artifacts move as files, not pasted text (which bloats context). Models are chosen to match task complexity — cheap models for mechanical work, capable models for judgment calls.
 
-3. **Contributed to the workflow itself.** Two skills were updated during this project based on real failures: the journal skill (draft file handling after orphaned drafts accumulated), and the bug skill (immediate memory of retro obligation after one slipped through a session boundary).
+3. **Contributed to the workflow itself.** Multiple skills and global config updated based on real failures: the journal skill (draft file handling), the bug skill (immediate retro obligation memory), and the global CLAUDE.md (Definition of Done, CI/CD standards, commit message standard, no-dummy-commit rule, concept vs. tool separation in the new project checklist).
 
 4. **Ran the full workflow end-to-end, repeatedly.** Not just once. Every feature. That consistency is the point — it's what makes the habits stick.
 
@@ -398,6 +435,8 @@ The bugs that took the longest to find, and what they teach:
 | Preview card never appeared in E2E (CI worker connected to wrong Redis) | CI worker used a static `STAGING_REDIS_URL` secret; Railway app used its own per-environment Redis. Jobs were enqueued into Railway's Redis, worker drained a different instance | Workers that share a queue with a deployed service must run in the same deployment environment, not CI |
 | `Math.random()` lint error in `useRef` | React compiler flags `Math.random()` as an impure function call during render — `useRef(...)` is evaluated at render time | Use `useId()` to generate stable unique IDs per hook instance; it's pure and React-approved |
 | Upsert idempotency broken on retry | `onConflict` not specified — PostgREST conflicted on PK UUID (no match found) and issued a plain INSERT. The real unique constraint `(message_id, url)` then threw on retry | Always name the business-key constraint in `onConflict`, not just the PK |
+| `tsc --noEmit` in lint-staged showed hundreds of node_modules errors | When lint-staged passes file args to `tsc`, TypeScript bypasses `tsconfig.json` entirely — no `skipLibCheck`, no path aliases. Every library's `.d.ts` file becomes a candidate for type errors | `tsc --noEmit` is a full-project command; never pass it file arguments. Put it in CI, not lint-staged |
+| ESLint `react/no-children-prop` conflicts with TypeScript in test wrappers | Components that explicitly declare `children: ReactNode` in their props type require `children` in the props object passed to `React.createElement`. But ESLint says don't put children in props. | In `.tsx` test files use JSX syntax (`<Component>{children}</Component>`); in `.ts` test files, add `eslint-disable-next-line` with a comment explaining the constraint |
 
 ---
 
