@@ -182,8 +182,13 @@ jobs:
                   'Content-Type': 'application/json',
               }
           )
-          resp = urllib.request.urlopen(req)
-          print('Webhook updated:', resp.read().decode())
+          try:
+              resp = urllib.request.urlopen(req)
+              print('Webhook updated:', resp.read().decode())
+          except urllib.error.HTTPError as e:
+              body = e.read().decode()
+              print(f'HTTP {e.code} {e.reason}: {body}', file=__import__('sys').stderr)
+              raise SystemExit(1)
           EOF
 
       - name: Wait for Railway redeployment
