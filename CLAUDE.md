@@ -128,6 +128,7 @@ gh workflow run e2e.yml -f environment=<railway-env-name>
 | `Environment "X" not found` on Railway step | PR environment name doesn't match Railway's | Check "Resolve environment name" step logs for the raw value of `deployment_status.environment` |
 | Playwright tests fail with auth errors | PR environment is still using production Supabase vars | Check "Set staging Supabase vars" step — if it passed, confirm Railway redeployed the service with the new vars |
 | `migrate.yml` fails with migration conflict | Staging has a migration applied out-of-band (e.g., via MCP) that isn't in the branch | Make the migration idempotent (`IF NOT EXISTS`) and remove the phantom entry from `supabase_migrations.schema_migrations` |
+| `Migrate staging` fails immediately on every PR | `chat-app-staging` Supabase project is paused (free plan — only one active project allowed) | Unpause staging in the Supabase dashboard before opening PRs |
 
 ## Operations
 
