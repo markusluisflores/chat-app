@@ -254,6 +254,20 @@ waiting → active → completed
 
 ---
 
+### 14. `pg_net` — When the Database Makes HTTP Calls
+
+**Simple version:** Normally a database is passive — it waits for your app to talk to it. `pg_net` is a PostgreSQL extension that inverts this: it lets the database make outbound HTTP requests from inside a trigger. In this app, when a message is inserted, a trigger uses `pg_net` to call the Railway worker, which fetches link preview metadata. The message insert completes immediately; the HTTP call happens in the background asynchronously.
+
+**The gotcha that bit us in production:** `pg_net` was enabled in staging manually via the Supabase dashboard during development — it was never added to a migration file. When production was first tested, every message send returned "Failed to send." The error was in Postgres logs: `schema "net" does not exist`. Because the trigger runs inside the same transaction as the INSERT, a trigger crash rolls back the entire INSERT. The user never saw the message.
+
+Fix: `CREATE EXTENSION IF NOT EXISTS pg_net;` in a migration file (`011_enable_pg_net.sql`), applied to both environments through CI.
+
+**Rule that came from this:** Any extension a trigger depends on must live in a migration file. Manual dashboard installs don't carry over to other environments — staging, production, and any fresh database are all isolated.
+
+**Interview talking point:** "Triggers are part of the transaction. If the trigger crashes, the INSERT rolls back — so from the user's perspective the message just failed to send with no clear error. The actual cause was a missing database extension that was installed in staging but never committed to a migration file. It's a good example of why 'works on staging' isn't enough — environment parity has to be enforced through code, not manual steps."
+
+---
+
 ### 13. Railway Cloudflare Rate Limiting — The `?queryName=` Fix
 
 **Simple version:** When our CI pipeline tries to set Railway environment variables via the Railway API, it gets back a 403 "Forbidden" error — even with a valid token. The culprit isn't the token. It's Cloudflare, which protects Railway's API and applies an unusually strict rate limit to any request that's missing a specific query parameter.
@@ -433,6 +447,7 @@ The bugs that took the longest to find, and what they teach:
 | Open redirect in auth callback | `next` query param passed directly to `redirect()` without validation | Always validate redirect targets: starts with `/`, not `//` |
 | Upsert silently succeeded despite DB error | `supabase.from(...).upsert(...)` returns `{ data, error }` — it never throws. Not destructuring `error` meant DB constraint failures were silently swallowed as job successes | Always destructure `{ error }` from Supabase writes and `if (error) throw error` |
 | Preview card never appeared in E2E (CI worker connected to wrong Redis) | CI worker used a static `STAGING_REDIS_URL` secret; Railway app used its own per-environment Redis. Jobs were enqueued into Railway's Redis, worker drained a different instance | Workers that share a queue with a deployed service must run in the same deployment environment, not CI |
+| Messages failed to send in production ("Failed to send") | `pg_net` extension was enabled in staging manually (not via a migration file) so it never ran in production. The webhook trigger calling `net.http_post()` crashed on every INSERT, rolling back the whole transaction | Any extension that a trigger depends on must be in a migration file — manual dashboard installs don't carry over to other environments |
 | `Math.random()` lint error in `useRef` | React compiler flags `Math.random()` as an impure function call during render — `useRef(...)` is evaluated at render time | Use `useId()` to generate stable unique IDs per hook instance; it's pure and React-approved |
 | Upsert idempotency broken on retry | `onConflict` not specified — PostgREST conflicted on PK UUID (no match found) and issued a plain INSERT. The real unique constraint `(message_id, url)` then threw on retry | Always name the business-key constraint in `onConflict`, not just the PK |
 | `tsc --noEmit` in lint-staged showed hundreds of node_modules errors | When lint-staged passes file args to `tsc`, TypeScript bypasses `tsconfig.json` entirely — no `skipLibCheck`, no path aliases. Every library's `.d.ts` file becomes a candidate for type errors | `tsc --noEmit` is a full-project command; never pass it file arguments. Put it in CI, not lint-staged |
